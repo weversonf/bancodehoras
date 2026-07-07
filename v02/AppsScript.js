@@ -3,6 +3,25 @@
 // Compativel com a planilha BD_bancodehoras
 // ============================================
 
+// ---------- TESTE (Execute esta funcao para testar) ----------
+function testar() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheets = ss.getSheets().map(s => s.getName());
+  Logger.log('Abas encontradas: ' + JSON.stringify(sheets));
+  
+  const config = getConfig(ss);
+  Logger.log('Config: ' + JSON.stringify(config));
+  
+  const registros = getRegistros(ss);
+  Logger.log('Registros: ' + JSON.stringify(registros));
+  
+  SpreadsheetApp.getUi().alert(
+    'Abas: ' + sheets.join(', ') + '\n\n' +
+    'Config: ' + JSON.stringify(config) + '\n\n' +
+    'Registros: ' + registros.length + ' encontrados'
+  );
+}
+
 // ---------- API ----------
 function doGet(e) {
   return handleRequest(e);
@@ -41,7 +60,7 @@ function handleRequest(e) {
         result = { error: 'Acao desconhecida: ' + action };
     }
   } catch(err) {
-    result = { error: err.message };
+    result = { error: err.message, stack: err.stack };
   }
 
   return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
@@ -49,26 +68,26 @@ function handleRequest(e) {
 
 // ---------- CONFIG (TB_CONFIGURACOES) ----------
 function getConfig(ss) {
-  const sheet = ss.getSheetByName('TB_CONFIGURACOES');
-  if(!sheet) return { error: 'Aba TB_CONFIGURACOES nao encontrada' };
+  const sheet = findSheet(ss, 'CONFIG');
+  if(!sheet) return { error: 'Aba de configuracao nao encontrada' };
   const lastRow = sheet.getLastRow();
   if(lastRow < 2) return {};
   const data = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
   const config = {};
   data.forEach(row => {
-    const key = String(row[0]).trim();
+    const key = String(row[0]).trim().toLowerCase();
     const val = row[1];
-    if(key === 'dias_uteis') {
+    if(key.includes('dias') && key.includes('uteis')) {
       config.diasSemana = String(val).split(',').map(s => Number(s.trim()));
-    } else if(key === 'jornada_inicio') {
+    } else if(key.includes('inicio') || key.includes('entrada')) {
       config.entrada = String(val);
-    } else if(key === 'jornada_fim') {
+    } else if(key.includes('fim') || key.includes('saida')) {
       config.saida = String(val);
-    } else if(key === 'horas_almoco') {
+    } else if(key.includes('almoco')) {
       config.horasAlmoco = Number(val) || 1;
-    } else if(key === 'saldo_inicial_minutos') {
+    } else if(key.includes('saldo') && key.includes('inicial')) {
       config.saldoInicialMin = Number(val) || 0;
-    } else if(key === 'salario') {
+    } else if(key.includes('salario')) {
       config.salario = Number(val) || 0;
     }
   });
@@ -76,8 +95,8 @@ function getConfig(ss) {
 }
 
 function saveConfig(ss, config) {
-  const sheet = ss.getSheetByName('TB_CONFIGURACOES');
-  if(!sheet) return { error: 'Aba TB_CONFIGURACOES nao encontrada' };
+  const sheet = findSheet(ss, 'CONFIG');
+  if(!sheet) return { error: 'Aba de configuracao nao encontrada' };
   const lastRow = sheet.getLastRow();
   if(lastRow < 2) return { error: 'Planilha vazia' };
   const data = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
@@ -92,17 +111,19 @@ function saveConfig(ss, config) {
   };
 
   data.forEach((row, i) => {
-    const key = String(row[0]).trim();
-    if(map[key] !== undefined) {
-      sheet.getRange(i + 2, 2).setValue(map[key]);
-    }
+    const key = String(row[0]).trim().toLowerCase();
+    Object.keys(map).forEach(mapKey => {
+      if(key.includes(mapKey.replace(/_/g, ' ')) || key === mapKey) {
+        sheet.getRange(i + 2, 2).setValue(map[mapKey]);
+      }
+    });
   });
   return { success: true };
 }
 
 // ---------- REGISTROS (TB_REGISTROS) ----------
 function getRegistros(ss) {
-  const sheet = ss.getSheetByName('TB_REGISTROS');
+  const sheet = findSheet(ss, 'REGISTRO');
   if(!sheet) return [];
   const lastRow = sheet.getLastRow();
   if(lastRow <= 1) return [];
@@ -116,8 +137,8 @@ function getRegistros(ss) {
 }
 
 function saveRegistro(ss, reg) {
-  const sheet = ss.getSheetByName('TB_REGISTROS');
-  if(!sheet) return { error: 'Aba TB_REGISTROS nao encontrada' };
+  const sheet = findSheet(ss, 'REGISTRO');
+  if(!sheet) return { error: 'Aba de registros nao encontrada' };
   const lastRow = sheet.getLastRow();
   if(lastRow > 1) {
     const data = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
@@ -132,7 +153,7 @@ function saveRegistro(ss, reg) {
 }
 
 function deleteRegistro(ss, dateStr) {
-  const sheet = ss.getSheetByName('TB_REGISTROS');
+  const sheet = findSheet(ss, 'REGISTRO');
   if(!sheet) return { error: 'Aba nao encontrada' };
   const lastRow = sheet.getLastRow();
   if(lastRow > 1) {
@@ -154,15 +175,13 @@ function getAll(ss) {
   };
 }
 
-// ---------- TESTE (Execute esta funcao para testar) ----------
-function testar() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const result = getAll(ss);
-  Logger.log(JSON.stringify(result, null, 2));
-  SpreadsheetApp.getUi().alert('Teste OK!\n\n' + JSON.stringify(result, null, 2));
+// ---------- HELPERS ----------
+function findSheet(ss, namePattern) {
+  const sheets = ss.getSheets();
+  const pattern = namePattern.toLowerCase();
+  return sheets.find(s => s.getName().toLowerCase().includes(pattern)) || null;
 }
 
-// ---------- HELPERS ----------
 function formatDate(val) {
   if(!val) return '';
   if(val instanceof Date) {
