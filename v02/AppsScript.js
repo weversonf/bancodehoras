@@ -1,25 +1,55 @@
 // ============================================
 // MAKRO TIME INTELLIGENCE - GOOGLE APPS SCRIPT
-// Compativel com a planilha BD_bancodehoras
 // ============================================
 
-// ---------- TESTE (Execute esta funcao para testar) ----------
+// ---------- SETUP (Execute uma vez para criar a estrutura) ----------
+function setup() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // TB_CONFIGURACOES
+  var configSheet = ss.getSheetByName('TB_CONFIGURACOES');
+  if(!configSheet) configSheet = ss.insertSheet('TB_CONFIGURACOES');
+  configSheet.clear();
+  configSheet.getRange('A1:B1').setValues([['Chave', 'Valor']]).setFontWeight('bold').setBackground('#E3000F').setFontColor('white');
+  configSheet.getRange('A2:B7').setValues([
+    ['jornada_inicio', '07:50'],
+    ['jornada_fim', '17:38'],
+    ['horas_almoco', 1],
+    ['dias_uteis', '1, 2, 3, 4, 5'],
+    ['saldo_inicial_minutos', 0],
+    ['salario', 0]
+  ]);
+  configSheet.setColumnWidth(1, 200);
+  configSheet.setColumnWidth(2, 200);
+
+  // TB_REGISTROS
+  var regSheet = ss.getSheetByName('TB_REGISTROS');
+  if(!regSheet) regSheet = ss.insertSheet('TB_REGISTROS');
+  regSheet.clear();
+  regSheet.getRange('A1:D1').setValues([['Data', 'Entrada', 'Saida', 'Saldo']]).setFontWeight('bold').setBackground('#E3000F').setFontColor('white');
+  regSheet.setColumnWidth(1, 120);
+  regSheet.setColumnWidth(2, 100);
+  regSheet.setColumnWidth(3, 100);
+  regSheet.setColumnWidth(4, 100);
+
+  // Remove abas padrao
+  var defaultSheet = ss.getSheetByName('Sheet1') || ss.getSheetByName('Página1');
+  if(defaultSheet && ss.getSheets().length > 1) {
+    try { ss.deleteSheet(defaultSheet); } catch(e) {}
+  }
+
+  SpreadsheetApp.getUi().alert('Planilha configurada!\n\nAbas criadas:\n- TB_CONFIGURACOES\n- TB_REGISTROS');
+}
+
+// ---------- TESTE ----------
 function testar() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheets = ss.getSheets().map(s => s.getName());
-  Logger.log('Abas encontradas: ' + JSON.stringify(sheets));
-  
-  const config = getConfig(ss);
-  Logger.log('Config: ' + JSON.stringify(config));
-  
-  const registros = getRegistros(ss);
-  Logger.log('Registros: ' + JSON.stringify(registros));
-  
-  SpreadsheetApp.getUi().alert(
-    'Abas: ' + sheets.join(', ') + '\n\n' +
-    'Config: ' + JSON.stringify(config) + '\n\n' +
-    'Registros: ' + registros.length + ' encontrados'
-  );
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var result = getAll(ss);
+    SpreadsheetApp.getUi().alert('OK!\n\n' + JSON.stringify(result, null, 2));
+  } catch(e) {
+    SpreadsheetApp.getUi().alert('ERRO: ' + e.message);
+  }
 }
 
 // ---------- API ----------
@@ -32,160 +62,121 @@ function doPost(e) {
 }
 
 function handleRequest(e) {
-  const action = e.parameter.action;
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let result;
-
+  var action = e.parameter.action;
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var result;
   try {
-    switch(action) {
-      case 'getAll':
-        result = getAll(ss);
-        break;
-      case 'getConfig':
-        result = getConfig(ss);
-        break;
-      case 'saveConfig':
-        result = saveConfig(ss, JSON.parse(e.postData.contents));
-        break;
-      case 'getRegistros':
-        result = getRegistros(ss);
-        break;
-      case 'saveRegistro':
-        result = saveRegistro(ss, JSON.parse(e.postData.contents));
-        break;
-      case 'deleteRegistro':
-        result = deleteRegistro(ss, e.parameter.data);
-        break;
-      default:
-        result = { error: 'Acao desconhecida: ' + action };
-    }
+    if(action === 'getAll') result = getAll(ss);
+    else if(action === 'getConfig') result = getConfig(ss);
+    else if(action === 'saveConfig') result = saveConfig(ss, JSON.parse(e.postData.contents));
+    else if(action === 'getRegistros') result = getRegistros(ss);
+    else if(action === 'saveRegistro') result = saveRegistro(ss, JSON.parse(e.postData.contents));
+    else if(action === 'deleteRegistro') result = deleteRegistro(ss, e.parameter.data);
+    else result = {error: 'Acao desconhecida'};
   } catch(err) {
-    result = { error: err.message, stack: err.stack };
+    result = {error: err.message};
   }
-
   return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
 }
 
-// ---------- CONFIG (TB_CONFIGURACOES) ----------
+// ---------- CONFIG ----------
 function getConfig(ss) {
-  const sheet = findSheet(ss, 'CONFIG');
-  if(!sheet) return { error: 'Aba de configuracao nao encontrada' };
-  const lastRow = sheet.getLastRow();
+  var sheet = ss.getSheetByName('TB_CONFIGURACOES');
+  if(!sheet) return {};
+  var lastRow = sheet.getLastRow();
   if(lastRow < 2) return {};
-  const data = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
-  const config = {};
-  data.forEach(row => {
-    const key = String(row[0]).trim().toLowerCase();
-    const val = row[1];
-    if(key.includes('dias') && key.includes('uteis')) {
-      config.diasSemana = String(val).split(',').map(s => Number(s.trim()));
-    } else if(key.includes('inicio') || key.includes('entrada')) {
-      config.entrada = String(val);
-    } else if(key.includes('fim') || key.includes('saida')) {
-      config.saida = String(val);
-    } else if(key.includes('almoco')) {
-      config.horasAlmoco = Number(val) || 1;
-    } else if(key.includes('saldo') && key.includes('inicial')) {
-      config.saldoInicialMin = Number(val) || 0;
-    } else if(key.includes('salario')) {
-      config.salario = Number(val) || 0;
+  var data = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
+  var config = {};
+  for(var i = 0; i < data.length; i++) {
+    var key = String(data[i][0]).trim();
+    var val = data[i][1];
+    if(key === 'jornada_inicio') config.entrada = String(val);
+    else if(key === 'jornada_fim') config.saida = String(val);
+    else if(key === 'horas_almoco') config.horasAlmoco = Number(val) || 1;
+    else if(key === 'dias_uteis') {
+      config.diasSemana = String(val).split(',');
+      for(var j = 0; j < config.diasSemana.length; j++) config.diasSemana[j] = Number(config.diasSemana[j].trim());
     }
-  });
+    else if(key === 'saldo_inicial_minutos') config.saldoInicialMin = Number(val) || 0;
+    else if(key === 'salario') config.salario = Number(val) || 0;
+  }
   return config;
 }
 
 function saveConfig(ss, config) {
-  const sheet = findSheet(ss, 'CONFIG');
-  if(!sheet) return { error: 'Aba de configuracao nao encontrada' };
-  const lastRow = sheet.getLastRow();
-  if(lastRow < 2) return { error: 'Planilha vazia' };
-  const data = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
-
-  const map = {
-    'jornada_inicio': config.entrada,
-    'jornada_fim': config.saida,
-    'horas_almoco': config.horasAlmoco,
-    'dias_uteis': config.diasSemana.join(', '),
-    'saldo_inicial_minutos': config.saldoInicialMin,
-    'salario': config.salario
-  };
-
-  data.forEach((row, i) => {
-    const key = String(row[0]).trim().toLowerCase();
-    Object.keys(map).forEach(mapKey => {
-      if(key.includes(mapKey.replace(/_/g, ' ')) || key === mapKey) {
-        sheet.getRange(i + 2, 2).setValue(map[mapKey]);
-      }
-    });
-  });
-  return { success: true };
+  var sheet = ss.getSheetByName('TB_CONFIGURACOES');
+  if(!sheet) return {error: 'Aba nao encontrada'};
+  var lastRow = sheet.getLastRow();
+  if(lastRow < 2) return {error: 'Vazio'};
+  var data = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
+  for(var i = 0; i < data.length; i++) {
+    var key = String(data[i][0]).trim();
+    if(key === 'jornada_inicio') sheet.getRange(i+2, 2).setValue(config.entrada);
+    else if(key === 'jornada_fim') sheet.getRange(i+2, 2).setValue(config.saida);
+    else if(key === 'horas_almoco') sheet.getRange(i+2, 2).setValue(config.horasAlmoco);
+    else if(key === 'dias_uteis') sheet.getRange(i+2, 2).setValue(config.diasSemana.join(', '));
+    else if(key === 'saldo_inicial_minutos') sheet.getRange(i+2, 2).setValue(config.saldoInicialMin);
+    else if(key === 'salario') sheet.getRange(i+2, 2).setValue(config.salario);
+  }
+  return {success: true};
 }
 
-// ---------- REGISTROS (TB_REGISTROS) ----------
+// ---------- REGISTROS ----------
 function getRegistros(ss) {
-  const sheet = findSheet(ss, 'REGISTRO');
+  var sheet = ss.getSheetByName('TB_REGISTROS');
   if(!sheet) return [];
-  const lastRow = sheet.getLastRow();
+  var lastRow = sheet.getLastRow();
   if(lastRow <= 1) return [];
-  const data = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
-  return data.map(row => ({
-    date: formatDate(row[0]),
-    entrada: String(row[1] || ''),
-    saida: String(row[2] || ''),
-    saldo: String(row[3] || '')
-  })).filter(r => r.date);
+  var data = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
+  var result = [];
+  for(var i = 0; i < data.length; i++) {
+    var d = formatDate(data[i][0]);
+    if(d) result.push({date: d, entrada: String(data[i][1]||''), saida: String(data[i][2]||''), saldo: String(data[i][3]||'')});
+  }
+  return result;
 }
 
 function saveRegistro(ss, reg) {
-  const sheet = findSheet(ss, 'REGISTRO');
-  if(!sheet) return { error: 'Aba de registros nao encontrada' };
-  const lastRow = sheet.getLastRow();
+  var sheet = ss.getSheetByName('TB_REGISTROS');
+  if(!sheet) return {error: 'Aba nao encontrada'};
+  var lastRow = sheet.getLastRow();
   if(lastRow > 1) {
-    const data = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
-    const idx = data.findIndex(row => formatDate(row[0]) === reg.date);
-    if(idx >= 0) {
-      sheet.getRange(idx + 2, 2, 1, 3).setValues([[reg.entrada, reg.saida, reg.saldo]]);
-      return { success: true, action: 'updated' };
+    var data = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
+    for(var i = 0; i < data.length; i++) {
+      if(formatDate(data[i][0]) === reg.date) {
+        sheet.getRange(i+2, 2, 1, 3).setValues([[reg.entrada, reg.saida, reg.saldo]]);
+        return {success: true, action: 'updated'};
+      }
     }
   }
   sheet.appendRow([reg.date, reg.entrada, reg.saida, reg.saldo]);
-  return { success: true, action: 'created' };
+  return {success: true, action: 'created'};
 }
 
 function deleteRegistro(ss, dateStr) {
-  const sheet = findSheet(ss, 'REGISTRO');
-  if(!sheet) return { error: 'Aba nao encontrada' };
-  const lastRow = sheet.getLastRow();
+  var sheet = ss.getSheetByName('TB_REGISTROS');
+  if(!sheet) return {error: 'Aba nao encontrada'};
+  var lastRow = sheet.getLastRow();
   if(lastRow > 1) {
-    const data = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
-    const idx = data.findIndex(row => formatDate(row[0]) === dateStr);
-    if(idx >= 0) {
-      sheet.deleteRow(idx + 2);
-      return { success: true };
+    var data = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
+    for(var i = 0; i < data.length; i++) {
+      if(formatDate(data[i][0]) === dateStr) {
+        sheet.deleteRow(i+2);
+        return {success: true};
+      }
     }
   }
-  return { error: 'Registro nao encontrado' };
+  return {error: 'Nao encontrado'};
 }
 
 // ---------- ALL ----------
 function getAll(ss) {
-  return {
-    config: getConfig(ss),
-    registros: getRegistros(ss)
-  };
+  return {config: getConfig(ss), registros: getRegistros(ss)};
 }
 
-// ---------- HELPERS ----------
-function findSheet(ss, namePattern) {
-  const sheets = ss.getSheets();
-  const pattern = namePattern.toLowerCase();
-  return sheets.find(s => s.getName().toLowerCase().includes(pattern)) || null;
-}
-
+// ---------- HELPER ----------
 function formatDate(val) {
   if(!val) return '';
-  if(val instanceof Date) {
-    return Utilities.formatDate(val, Session.getScriptTimeZone(), 'yyyy-MM-dd');
-  }
+  if(val instanceof Date) return Utilities.formatDate(val, Session.getScriptTimeZone(), 'yyyy-MM-dd');
   return String(val).substring(0, 10);
 }
