@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Makro Time Intelligence</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    body { background-color: #090D14; color: #f1f5f9; font-family: sans-serif; }
+    .glass-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); backdrop-filter: blur(10px); border-radius: 1.25rem; }
+    .btn-makro { background: #E3000F; transition: all 0.2s; font-weight: 900; text-transform: uppercase; }
+    .btn-makro:active { transform: scale(0.97); }
+    input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(1); }
+  </style>
+</head>
+<body class="pb-24">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo } = React;
+
+    const IconBank = () => <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>;
+    const IconClock = () => <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>;
+    const IconSettings = () => <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>;
+    const IconTrash = () => <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>;
+    const IconEdit = () => <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>;
+    const IconPlus = () => <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
+
+    function App() {
+      const [activeTab, setActiveTab] = useState('banco');
+      const [subTab, setSubTab] = useState('ponto');
+      const [editingId, setEditingId] = useState(null);
+      const [filterMonth, setFilterMonth] = useState(() => {
+        const d = new Date();
+        return d.toLocaleDateString('pt-BR', {month:'short', year:'2-digit'}).toUpperCase();
+      });
+
+      const defaultConfig = { salario: 1000, entrada: '07:50', saida: '17:38', diasSemana: [1,2,3,4,5] };
+      const [config, setConfig] = useState(() => {
+        const saved = localStorage.getItem('makro_config');
+        return saved ? { ...defaultConfig, ...JSON.parse(saved) } : defaultConfig;
+      });
+      const [records, setRecords] = useState(() => {
+        const saved = localStorage.getItem('makro_records');
+        return saved ? JSON.parse(saved) : [];
+      });
+      const [timeRecords, setTimeRecords] = useState(() => {
+        const saved = localStorage.getItem('makro_time_records');
+        return saved ? JSON.parse(saved) : [];
+      });
+
+      const [ref, setRef] = useState('');
+      const [hrsStr, setHrsStr] = useState('');
+      const [tipo, setTipo] = useState('negativo');
+
+      const [pontoDate, setPontoDate] = useState(() => new Date().toISOString().split('T')[0]);
+      const [pontoEntrada, setPontoEntrada] = useState('');
+      const [pontoSaida, setPontoSaida] = useState('');
+      const [editingPontoId, setEditingPontoId] = useState(null);
+
+      useEffect(() => { localStorage.setItem('makro_config', JSON.stringify(config)); }, [config]);
+      useEffect(() => { localStorage.setItem('makro_records', JSON.stringify(records)); }, [records]);
+      useEffect(() => { localStorage.setItem('makro_time_records', JSON.stringify(timeRecords)); }, [timeRecords]);
+
+      const valorHora = config.salario / 220;
+
+      const parseTimeToDecimal = (timeStr) => {
+        if(!timeStr || !timeStr.includes(':')) return 0;
+        const [hours, minutes] = timeStr.split(':').map(Number);
+        return (hours || 0) + ((minutes || 0) / 60);
+      };
+
+      const decimalToTime = (dec) => {
+        const sign = dec < 0 ? '-' : '';
+        const abs = Math.abs(dec);
+        const h = Math.floor(abs);
+        const m = Math.round((abs - h) * 60);
+        return `${sign}${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+      };
+
+      const getExpectedHours = () => {
+        const entrada = parseTimeToDecimal(config.entrada);
+        const saida = parseTimeToDecimal(config.saida);
+        return saida - entrada;
+      };
+
+      const isWorkDay = (dateStr) => {
+        const d = new Date(dateStr + 'T12:00:00');
+        return config.diasSemana.includes(d.getDay());
+      };
+
+      const getMonthKey = (dateStr) => {
+        const d = new Date(dateStr + 'T12:00:00');
+        return d.toLocaleDateString('pt-BR', {month:'short', year:'2-digit'}).toUpperCase();
+      };
+
+      const allMonths = useMemo(() => {
+        const year = new Date().getFullYear();
+        const months = [];
+        for(let m = 0; m < 12; m++) {
+          const d = new Date(year, m, 1);
+          months.push(d.toLocaleDateString('pt-BR', {month:'short', year:'2-digit'}).toUpperCase());
+        }
+        return months;
+      }, []);
+
+      const filteredTimeRecords = useMemo(() => {
+        return timeRecords.filter(r => getMonthKey(r.date) === filterMonth).sort((a,b) => b.date.localeCompare(a.date));
+      }, [timeRecords, filterMonth]);
+
+      const filteredRecords = useMemo(() => {
+        return records.filter(r => r.ref === filterMonth);
+      }, [records, filterMonth]);
+
+      const monthBalance = useMemo(() => {
+        let balance = 0;
+        const expected = getExpectedHours();
+
+        filteredTimeRecords.forEach(r => {
+          if(r.entrada && r.saida && isWorkDay(r.date)) {
+            const worked = parseTimeToDecimal(r.saida) - parseTimeToDecimal(r.entrada);
+            balance += worked - expected;
+          }
+        });
+
+        filteredRecords.forEach(r => {
+          balance += r.tipo === 'positivo' ? r.decimal : -r.decimal;
+        });
+
+        return balance;
+      }, [filteredTimeRecords, filteredRecords, config]);
+
+      const totalBalance = useMemo(() => {
+        let balance = 0;
+        const expected = getExpectedHours();
+
+        timeRecords.forEach(r => {
+          if(r.entrada && r.saida && isWorkDay(r.date)) {
+            const worked = parseTimeToDecimal(r.saida) - parseTimeToDecimal(r.entrada);
+            balance += worked - expected;
+          }
+        });
+
+        records.forEach(r => {
+          balance += r.tipo === 'positivo' ? r.decimal : -r.decimal;
+        });
+
+        return balance;
+      }, [timeRecords, records, config]);
+
+      const toggleDiaSemana = (dia) => {
+        const dias = config.diasSemana.includes(dia)
+          ? config.diasSemana.filter(d => d !== dia)
+          : [...config.diasSemana, dia].sort();
+        setConfig({...config, diasSemana: dias});
+      };
+
+      const handleSavePonto = () => {
+        if(!pontoDate) return;
+
+        if(editingPontoId) {
+          setTimeRecords(timeRecords.map(r => r.id === editingPontoId
+            ? {...r, date: pontoDate, entrada: pontoEntrada, saida: pontoSaida}
+            : r
+          ));
+          setEditingPontoId(null);
+        } else {
+          const exists = timeRecords.find(r => r.date === pontoDate);
+          if(exists) {
+            setTimeRecords(timeRecords.map(r => r.date === pontoDate
+              ? {...r, entrada: pontoEntrada, saida: pontoSaida}
+              : r
+            ));
+          } else {
+            setTimeRecords([...timeRecords, {id: Date.now(), date: pontoDate, entrada: pontoEntrada, saida: pontoSaida}]);
+          }
+        }
+        setPontoEntrada('');
+        setPontoSaida('');
+        setPontoDate(new Date().toISOString().split('T')[0]);
+      };
+
+      const handleEditPonto = (r) => {
+        setEditingPontoId(r.id);
+        setPontoDate(r.date);
+        setPontoEntrada(r.entrada);
+        setPontoSaida(r.saida);
+      };
+
+      const handleDeletePonto = (id) => {
+        if(confirm('Excluir este registro de ponto?')) {
+          setTimeRecords(timeRecords.filter(r => r.id !== id));
+        }
+      };
+
+      const handleSave = () => {
+        if(ref && hrsStr) {
+          const decimal = parseTimeToDecimal(hrsStr);
+          if (editingId) {
+            setRecords(records.map(r => r.id === editingId ? {...r, ref, hrsStr, tipo, decimal} : r));
+            setEditingId(null);
+          } else {
+            setRecords([...records, {id: Date.now(), ref, hrsStr, tipo, decimal}]);
+          }
+          setRef(''); setHrsStr(''); setTipo('negativo');
+        }
+      };
+
+      const handleEdit = (r) => {
+        setEditingId(r.id);
+        setRef(r.ref);
+        setHrsStr(r.hrsStr);
+        setTipo(r.tipo);
+        setSubTab('manual');
+      };
+
+      const handleDelete = (id) => {
+        if(confirm('Excluir este lançamento?')) {
+          setRecords(records.filter(r => r.id !== id));
+        }
+      };
+
+      const diaSemanaNomes = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+
+      return (
+        <div className="p-4 max-w-2xl mx-auto space-y-6">
+          <header className="py-4 flex items-center justify-between">
+            <h1 className="text-xl font-black uppercase tracking-tight">Makro Time</h1>
+            <div className={`px-3 py-1.5 rounded-lg text-xs font-black ${totalBalance >= 0 ? 'bg-green-900/40 text-green-400' : 'bg-red-900/40 text-red-400'}`}>
+              {decimalToTime(totalBalance)}
+            </div>
+          </header>
+
+          {activeTab === 'ajustes' ? (
+            <div className="space-y-4">
+              <div className="glass-card p-6 space-y-4">
+                <h3 className="font-black uppercase text-[10px] opacity-50">Salario Base</h3>
+                <input type="number" value={config.salario} onChange={e => setConfig({...config, salario: parseFloat(e.target.value) || 0})} className="w-full p-4 rounded-xl bg-white/5 border border-white/10 text-xl font-bold outline-none" />
+                <p className="text-xs opacity-50">Valor hora: R$ {valorHora.toFixed(2)}</p>
+              </div>
+
+              <div className="glass-card p-6 space-y-4">
+                <h3 className="font-black uppercase text-[10px] opacity-50">Carga Horaria</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[9px] uppercase opacity-40 mb-1 block">Entrada</label>
+                    <input type="time" value={config.entrada} onChange={e => setConfig({...config, entrada: e.target.value})} className="w-full p-3 rounded-xl bg-white/5 border border-white/10 font-bold text-lg outline-none" />
+                  </div>
+                  <div>
+                    <label className="text-[9px] uppercase opacity-40 mb-1 block">Saida</label>
+                    <input type="time" value={config.saida} onChange={e => setConfig({...config, saida: e.target.value})} className="w-full p-3 rounded-xl bg-white/5 border border-white/10 font-bold text-lg outline-none" />
+                  </div>
+                </div>
+                <p className="text-xs opacity-50">Jornada: {decimalToTime(getExpectedHours())} por dia</p>
+
+                <div>
+                  <label className="text-[9px] uppercase opacity-40 mb-2 block">Dias de Trabalho</label>
+                  <div className="flex gap-2">
+                    {diaSemanaNomes.map((nome, i) => (
+                      <button key={i} onClick={() => toggleDiaSemana(i)}
+                        className={`flex-1 py-2.5 rounded-lg text-[10px] font-black uppercase transition-colors ${config.diasSemana.includes(i) ? 'bg-red-900/50 text-red-400 border border-red-800' : 'bg-white/5 text-white/20 border border-white/5'}`}>
+                        {nome}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex gap-1 p-1 rounded-xl bg-white/5">
+                <button onClick={() => setSubTab('ponto')} className={`flex-1 py-2.5 rounded-lg text-[10px] font-black uppercase transition-colors ${subTab === 'ponto' ? 'bg-red-900/50 text-red-400' : 'text-white/30'}`}>Ponto</button>
+                <button onClick={() => setSubTab('banco')} className={`flex-1 py-2.5 rounded-lg text-[10px] font-black uppercase transition-colors ${subTab === 'banco' ? 'bg-red-900/50 text-red-400' : 'text-white/30'}`}>Banco</button>
+                <button onClick={() => setSubTab('manual')} className={`flex-1 py-2.5 rounded-lg text-[10px] font-black uppercase transition-colors ${subTab === 'manual' ? 'bg-red-900/50 text-red-400' : 'text-white/30'}`}>Manual</button>
+              </div>
+
+              <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+                {allMonths.map(m => (
+                  <button key={m} onClick={() => setFilterMonth(m)}
+                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase whitespace-nowrap transition-colors ${filterMonth === m ? 'bg-white/10 text-white' : 'text-white/30'}`}>
+                    {m}
+                  </button>
+                ))}
+              </div>
+
+              <div className={`p-4 rounded-2xl ${monthBalance >= 0 ? 'bg-green-900/20 border border-green-800/30' : 'bg-red-900/20 border border-red-800/30'}`}>
+                <div className="text-[9px] uppercase opacity-50 mb-1">Saldo do Mes</div>
+                <div className={`text-2xl font-black ${monthBalance >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  {monthBalance >= 0 ? '+' : ''}{decimalToTime(monthBalance)}
+                </div>
+              </div>
+
+              {subTab === 'ponto' && (
+                <div className="glass-card p-5">
+                  <h3 className="text-[10px] font-black uppercase mb-4 opacity-50">{editingPontoId ? 'Editar Registro' : 'Registrar Ponto'}</h3>
+                  <div className="grid grid-cols-3 gap-2 mb-3">
+                    <input type="date" value={pontoDate} onChange={e => setPontoDate(e.target.value)} className="p-3 rounded-xl bg-white/5 border border-white/10 w-full text-[11px] font-bold outline-none" />
+                    <input type="time" value={pontoEntrada} onChange={e => setPontoEntrada(e.target.value)} placeholder="Entrada" className="p-3 rounded-xl bg-white/5 border border-white/10 w-full text-center font-bold outline-none" />
+                    <input type="time" value={pontoSaida} onChange={e => setPontoSaida(e.target.value)} placeholder="Saida" className="p-3 rounded-xl bg-white/5 border border-white/10 w-full text-center font-bold outline-none" />
+                  </div>
+                  <button onClick={handleSavePonto} className="btn-makro w-full py-4 rounded-xl text-xs text-white">
+                    {editingPontoId ? 'Atualizar' : 'Salvar Ponto'}
+                  </button>
+                </div>
+              )}
+
+              {subTab === 'ponto' && (
+                <div className="glass-card overflow-hidden">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-white/5 text-[9px] font-black uppercase opacity-40">
+                      <tr>
+                        <th className="p-3">Data</th>
+                        <th className="p-3">Ent</th>
+                        <th className="p-3">Sai</th>
+                        <th className="p-3">Feitas</th>
+                        <th className="p-3">Saldo</th>
+                        <th className="p-3"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredTimeRecords.map(r => {
+                        const expected = getExpectedHours();
+                        const worked = (r.entrada && r.saida && isWorkDay(r.date))
+                          ? parseTimeToDecimal(r.saida) - parseTimeToDecimal(r.entrada)
+                          : null;
+                        const saldo = worked !== null ? worked - expected : null;
+                        const d = new Date(r.date + 'T12:00:00');
+                        const dayName = diaSemanaNomes[d.getDay()];
+                        const dayNum = d.getDate().toString().padStart(2,'0');
+
+                        return (
+                          <tr key={r.id} className="border-b border-white/5">
+                            <td className="p-3">
+                              <span className="font-bold">{dayNum}</span>
+                              <span className="text-[10px] opacity-40 ml-1">{dayName}</span>
+                            </td>
+                            <td className="p-3 font-mono text-[12px]">{r.entrada || '--:--'}</td>
+                            <td className="p-3 font-mono text-[12px]">{r.saida || '--:--'}</td>
+                            <td className="p-3 font-mono text-[12px]">{worked !== null ? decimalToTime(worked) : '--:--'}</td>
+                            <td className={`p-3 font-bold text-[12px] ${saldo === null ? 'opacity-30' : saldo >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                              {saldo !== null ? `${saldo >= 0 ? '+' : ''}${decimalToTime(saldo)}` : '--'}
+                            </td>
+                            <td className="p-3 flex gap-1">
+                              <button onClick={() => handleEditPonto(r)} className="opacity-50 hover:opacity-100 p-1"><IconEdit/></button>
+                              <button onClick={() => handleDeletePonto(r.id)} className="text-red-500 opacity-50 hover:opacity-100 p-1"><IconTrash/></button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {filteredTimeRecords.length === 0 && (
+                        <tr><td colSpan="6" className="p-6 text-center text-xs opacity-30">Nenhum registro neste mes</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {subTab === 'banco' && (
+                <div className="glass-card overflow-hidden">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-white/5 text-[9px] font-black uppercase opacity-40">
+                      <tr><th className="p-4">Ref</th><th className="p-4">Tempo</th><th className="p-4">Acoes</th></tr>
+                    </thead>
+                    <tbody>
+                      {[...filteredRecords].reverse().map(r => (
+                        <tr key={r.id} className="border-b border-white/5">
+                          <td className="p-4 font-bold">{r.ref}</td>
+                          <td className={`p-4 font-bold ${r.tipo === 'positivo' ? 'text-green-500' : 'text-red-500'}`}>
+                            {r.tipo === 'positivo' ? '+' : '-'}{r.hrsStr}
+                          </td>
+                          <td className="p-4 flex gap-2">
+                            <button onClick={() => handleEdit(r)} className="opacity-50 hover:opacity-100"><IconEdit/></button>
+                            <button onClick={() => handleDelete(r.id)} className="text-red-500 opacity-50 hover:opacity-100"><IconTrash/></button>
+                          </td>
+                        </tr>
+                      ))}
+                      {filteredRecords.length === 0 && (
+                        <tr><td colSpan="3" className="p-6 text-center text-xs opacity-30">Nenhum lancamento manual</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {subTab === 'manual' && (
+                <div className="space-y-4">
+                  <div className="glass-card p-5">
+                    <h3 className="text-[10px] font-black uppercase mb-4 opacity-50">{editingId ? 'Editando' : 'Lancamento Manual'}</h3>
+                    <div className="grid grid-cols-3 gap-2 mb-3">
+                      <select value={ref} onChange={e => setRef(e.target.value)} className="p-3 rounded-xl bg-white/5 border border-white/10 w-full outline-none text-white text-[11px] font-bold">
+                        <option value="">Ref.</option>
+                        {allMonths.map(m => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                      <button onClick={() => setTipo(tipo === 'positivo' ? 'negativo' : 'positivo')}
+                        className={`p-3 rounded-xl border border-white/10 flex items-center justify-center font-bold text-[10px] uppercase transition-colors ${tipo === 'negativo' ? 'bg-red-900/30 text-red-500' : 'bg-green-900/30 text-green-500'}`}>
+                        {tipo === 'positivo' ? '+ Pos' : '- Neg'}
+                      </button>
+                      <input type="text" placeholder="00:00" value={hrsStr} onChange={e => setHrsStr(e.target.value)} className="p-3 rounded-xl bg-white/5 border border-white/10 w-full text-center outline-none" />
+                    </div>
+                    <button onClick={handleSave} className="btn-makro w-full py-4 rounded-xl text-xs text-white">
+                      {editingId ? 'Atualizar' : 'Adicionar'}
+                    </button>
+                  </div>
+
+                  <div className="glass-card overflow-hidden">
+                    <table className="w-full text-left text-sm">
+                      <thead className="bg-white/5 text-[9px] font-black uppercase opacity-40">
+                        <tr><th className="p-4">Ref</th><th className="p-4">Tempo</th><th className="p-4">Acoes</th></tr>
+                      </thead>
+                      <tbody>
+                        {[...filteredRecords].reverse().map(r => (
+                          <tr key={r.id} className="border-b border-white/5">
+                            <td className="p-4 font-bold">{r.ref}</td>
+                            <td className={`p-4 font-bold ${r.tipo === 'positivo' ? 'text-green-500' : 'text-red-500'}`}>
+                              {r.tipo === 'positivo' ? '+' : '-'}{r.hrsStr}
+                            </td>
+                            <td className="p-4 flex gap-2">
+                              <button onClick={() => handleEdit(r)} className="opacity-50 hover:opacity-100"><IconEdit/></button>
+                              <button onClick={() => handleDelete(r.id)} className="text-red-500 opacity-50 hover:opacity-100"><IconTrash/></button>
+                            </td>
+                          </tr>
+                        ))}
+                        {filteredRecords.length === 0 && (
+                          <tr><td colSpan="3" className="p-6 text-center text-xs opacity-30">Nenhum lancamento manual</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="fixed bottom-0 left-0 right-0 bg-[#090D14]/90 backdrop-blur-lg border-t border-white/10 p-2 flex justify-around">
+            <button onClick={() => setActiveTab('banco')} className={`flex flex-col items-center p-2 ${activeTab === 'banco' ? 'text-red-600' : 'opacity-40'}`}>
+              <IconClock /><span className="text-[9px] font-bold uppercase mt-1">Banco</span>
+            </button>
+            <button onClick={() => setActiveTab('ajustes')} className={`flex flex-col items-center p-2 ${activeTab === 'ajustes' ? 'text-red-600' : 'opacity-40'}`}>
+              <IconSettings /><span className="text-[9px] font-bold uppercase mt-1">Ajustes</span>
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>

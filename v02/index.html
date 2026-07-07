@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Makro Time Intelligence v02</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { background-color: #090D14; color: #f1f5f9; font-family: 'Segoe UI', sans-serif; margin: 0; }
+    .glass { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); backdrop-filter: blur(10px); border-radius: 1.25rem; }
+    .btn-makro { background: linear-gradient(135deg, #E3000F, #FF2D2D); transition: all 0.2s; font-weight: 900; text-transform: uppercase; }
+    .btn-makro:active { transform: scale(0.97); }
+    input[type="time"]::-webkit-calendar-picker-indicator, input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); }
+    .glow-red { box-shadow: 0 0 20px rgba(227,0,15,0.3); }
+    .glow-green { box-shadow: 0 0 20px rgba(34,197,94,0.3); }
+    .glow-yellow { box-shadow: 0 0 20px rgba(234,179,8,0.3); }
+    @keyframes pulse-glow { 0%,100% { opacity:0.6; } 50% { opacity:1; } }
+    .animate-glow { animation: pulse-glow 2s ease-in-out infinite; }
+    @keyframes slide-up { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+    .slide-up { animation: slide-up 0.3s ease-out; }
+    .progress-bar { background: linear-gradient(90deg, #E3000F, #FF4444); transition: width 0.8s ease; }
+    .progress-bar-green { background: linear-gradient(90deg, #16a34a, #22c55e); transition: width 0.8s ease; }
+    .xp-bar { background: linear-gradient(90deg, #8b5cf6, #a78bfa); transition: width 0.8s ease; }
+    .achievement-locked { opacity: 0.25; filter: grayscale(1); }
+    .achievement-unlocked { opacity: 1; filter: none; }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+  </style>
+</head>
+<body class="pb-24">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo, useCallback } = React;
+
+    const ICONS = {
+      dashboard: <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>,
+      clock: <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
+      settings: <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>,
+      trophy: <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>,
+      fire: <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>,
+      zap: <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>,
+      star: <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>,
+      target: <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>,
+      gift: <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>,
+      edit: <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>,
+      trash: <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>,
+      sun: <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>,
+      moon: <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>,
+      history: <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/><path d="M16 18h.01"/></svg>,
+      coffee: <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>,
+    };
+
+    const LEVELS = [
+      { name: 'Estagiario', minXP: 0, icon: '🌱' },
+      { name: 'Junior', minXP: 50, icon: '🔵' },
+      { name: 'Pleno', minXP: 150, icon: '⚡' },
+      { name: 'Senior', minXP: 300, icon: '🔥' },
+      { name: 'Lead', minXP: 500, icon: '💎' },
+      { name: 'Manager', minXP: 800, icon: '👑' },
+      { name: 'Diretor', minXP: 1200, icon: '🏆' },
+    ];
+
+    const ACHIEVEMENTS = [
+      { id: 'first_ponto', name: 'Primeiro Ponto', desc: 'Registre seu primeiro ponto', icon: '⏰', check: (s) => s.totalPontos >= 1 },
+      { id: 'week_streak', name: 'Sequencia de 5', desc: '5 dias positivos seguidos', icon: '🔥', check: (s) => s.streak >= 5 },
+      { id: 'month_streak', name: 'Sequencia de 20', desc: '20 dias positivos seguidos', icon: '💎', check: (s) => s.streak >= 20 },
+      { id: 'balance_10', name: 'Saldo +10h', desc: 'Acumule 10 horas positivas', icon: '⭐', check: (s) => s.totalBalance >= 10 },
+      { id: 'balance_20', name: 'Saldo +20h', desc: 'Acumule 20 horas positivas', icon: '🌟', check: (s) => s.totalBalance >= 20 },
+      { id: 'balance_40', name: 'Saldo +40h', desc: 'Acumule 40 horas positivas', icon: '🏆', check: (s) => s.totalBalance >= 40 },
+      { id: 'balance_44', name: 'Dia de Folga!', desc: 'Acumule 44h para 1 folga', icon: '🎉', check: (s) => s.totalBalance >= 44 },
+      { id: 'early_bird', name: 'Passaro Madrugador', desc: 'Chegue antes das 7:30', icon: '🐦', check: (s) => s.earliestEntry && s.earliestEntry < '07:30' },
+      { id: 'xp_100', name: 'Nivel Junior', desc: 'Alcance nivel Junior', icon: '🔵', check: (s) => s.totalXP >= 50 },
+      { id: 'xp_300', name: 'Nivel Senior', desc: 'Alcance nivel Senior', icon: '🔥', check: (s) => s.totalXP >= 300 },
+      { id: 'perfect_week', name: 'Semana Perfeita', desc: '5 dias com mais de 8h', icon: '💪', check: (s) => s.perfectWeekDays >= 5 },
+      { id: 'manual_5', name: 'Ajuste Fino', desc: '5 lancamentos manuais', icon: '✏️', check: (s) => s.totalManuals >= 5 },
+    ];
+
+    const DIA_NOMES = ['Dom','Seg','Ter','Qua','Qui','Sex','Sab'];
+
+    function App() {
+      const defaultConfig = { salario: 1000, entrada: '07:50', saida: '17:38', diasSemana: [1,2,3,4,5] };
+      const [config, setConfig] = useState(() => {
+        const saved = localStorage.getItem('makro_v02_config');
+        return saved ? { ...defaultConfig, ...JSON.parse(saved) } : defaultConfig;
+      });
+      const [timeRecords, setTimeRecords] = useState(() => {
+        const saved = localStorage.getItem('makro_v02_time');
+        return saved ? JSON.parse(saved) : [];
+      });
+      const [manualRecords, setManualRecords] = useState(() => {
+        const saved = localStorage.getItem('makro_v02_manual');
+        return saved ? JSON.parse(saved) : [];
+      });
+      const [achievementsUnlocked, setAchievementsUnlocked] = useState(() => {
+        const saved = localStorage.getItem('makro_v02_achievements');
+        return saved ? JSON.parse(saved) : [];
+      });
+
+      const [activeTab, setActiveTab] = useState('dashboard');
+      const [filterMonth, setFilterMonth] = useState(() => {
+        const d = new Date();
+        return d.toLocaleDateString('pt-BR', {month:'short', year:'2-digit'}).toUpperCase();
+      });
+      const [pontoDate, setPontoDate] = useState(() => new Date().toISOString().split('T')[0]);
+      const [pontoEntrada, setPontoEntrada] = useState('');
+      const [pontoSaida, setPontoSaida] = useState('');
+      const [editingPontoId, setEditingPontoId] = useState(null);
+      const [showAchievement, setShowAchievement] = useState(null);
+
+      useEffect(() => { localStorage.setItem('makro_v02_config', JSON.stringify(config)); }, [config]);
+      useEffect(() => { localStorage.setItem('makro_v02_time', JSON.stringify(timeRecords)); }, [timeRecords]);
+      useEffect(() => { localStorage.setItem('makro_v02_manual', JSON.stringify(manualRecords)); }, [manualRecords]);
+      useEffect(() => { localStorage.setItem('makro_v02_achievements', JSON.stringify(achievementsUnlocked)); }, [achievementsUnlocked]);
+
+      const parseTime = (t) => { if(!t||!t.includes(':')) return 0; const [h,m] = t.split(':').map(Number); return (h||0)+((m||0)/60); };
+      const fmtTime = (dec) => { const s=dec<0?'-':''; const a=Math.abs(dec); const h=Math.floor(a); const m=Math.round((a-h)*60); return `${s}${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`; };
+      const expectedHours = parseTime(config.saida) - parseTime(config.entrada);
+      const isWorkDay = (d) => { const dt = new Date(d+'T12:00:00'); return config.diasSemana.includes(dt.getDay()); };
+      const getMonthKey = (d) => { const dt = new Date(d+'T12:00:00'); return dt.toLocaleDateString('pt-BR',{month:'short',year:'2-digit'}).toUpperCase(); };
+
+      const allMonths = useMemo(() => {
+        const y = new Date().getFullYear();
+        return Array.from({length:12}, (_,i) => new Date(y,i,1).toLocaleDateString('pt-BR',{month:'short',year:'2-digit'}).toUpperCase());
+      }, []);
+
+      const stats = useMemo(() => {
+        let totalBalance = 0, totalXP = 0, totalPontos = timeRecords.length, totalManuals = manualRecords.length;
+        let streak = 0, currentStreak = 0, perfectWeekDays = 0;
+        let earliestEntry = null;
+        const sorted = [...timeRecords].sort((a,b) => a.date.localeCompare(b.date));
+
+        sorted.forEach(r => {
+          if(r.entrada && r.saida && isWorkDay(r.date)) {
+            const worked = parseTime(r.saida) - parseTime(r.entrada);
+            const diff = worked - expectedHours;
+            totalBalance += diff;
+            if(diff > 0) { currentStreak++; totalXP += Math.round(diff * 10); }
+            else { currentStreak = 0; }
+            if(currentStreak > streak) streak = currentStreak;
+            if(worked >= expectedHours) perfectWeekDays++;
+            if(!earliestEntry || r.entrada < earliestEntry) earliestEntry = r.entrada;
+          }
+        });
+
+        manualRecords.forEach(r => {
+          totalBalance += r.tipo === 'positivo' ? r.decimal : -r.decimal;
+          totalXP += r.tipo === 'positivo' ? Math.round(r.decimal * 5) : 0;
+        });
+
+        totalXP += totalPontos * 5;
+
+        const level = [...LEVELS].reverse().find(l => totalXP >= l.minXP) || LEVELS[0];
+        const nextLevel = LEVELS[LEVELS.indexOf(level) + 1];
+        const xpProgress = nextLevel ? ((totalXP - level.minXP) / (nextLevel.minXP - level.minXP)) * 100 : 100;
+
+        const diasParaFolga = expectedHours > 0 ? Math.ceil(expectedHours) : 8;
+        const folgasPossiveis = totalBalance >= diasParaFolga ? Math.floor(totalBalance / diasParaFolga) : 0;
+        const horasParaProxFolga = totalBalance >= 0 ? diasParaFolga - (totalBalance % diasParaFolga) : diasParaFolga + totalBalance;
+
+        return { totalBalance, totalXP, totalPontos, totalManuals, streak, currentStreak, perfectWeekDays, earliestEntry, level, nextLevel, xpProgress, folgasPossiveis, horasParaProxFolga, diasParaFolga };
+      }, [timeRecords, manualRecords, config]);
+
+      useEffect(() => {
+        ACHIEVEMENTS.forEach(a => {
+          if(!achievementsUnlocked.includes(a.id) && a.check(stats)) {
+            setAchievementsUnlocked(prev => [...prev, a.id]);
+            setShowAchievement(a);
+            setTimeout(() => setShowAchievement(null), 4000);
+          }
+        });
+      }, [stats]);
+
+      const filteredTime = useMemo(() => timeRecords.filter(r => getMonthKey(r.date)===filterMonth).sort((a,b)=>b.date.localeCompare(a.date)), [timeRecords, filterMonth]);
+      const filteredManual = useMemo(() => manualRecords.filter(r => r.ref===filterMonth), [manualRecords, filterMonth]);
+
+      const monthBalance = useMemo(() => {
+        let b = 0;
+        filteredTime.forEach(r => { if(r.entrada&&r.saida&&isWorkDay(r.date)) b += (parseTime(r.saida)-parseTime(r.entrada))-expectedHours; });
+        filteredManual.forEach(r => { b += r.tipo==='positivo' ? r.decimal : -r.decimal; });
+        return b;
+      }, [filteredTime, filteredManual, config]);
+
+      const getSmartTips = () => {
+        const tips = [];
+        const { totalBalance, streak, folgasPossiveis, horasParaProxFolga, diasParaFolga } = stats;
+
+        if(folgasPossiveis >= 1) {
+          tips.push({ icon: '🎉', text: `Voce tem saldo para ${folgasPossiveis} folga(s)! Aproveite!`, type: 'success' });
+        }
+
+        if(totalBalance > 0 && horasParaProxFolga > 0 && horasParaProxFolga <= 4) {
+          tips.push({ icon: '🎯', text: `Faltam apenas ${fmtTime(horasParaProxFolga)} para mais 1 dia de folga!`, type: 'goal' });
+        }
+
+        if(totalBalance > 0 && horasParaProxFolga > 4 && horasParaProxFolga <= 8) {
+          tips.push({ icon: '💪', text: `Faca mais ${fmtTime(horasParaProxFolga)} positivas e voce garante 1 folga!`, type: 'motivation' });
+        }
+
+        if(streak >= 3) {
+          tips.push({ icon: '🔥', text: `Sequencia de ${streak} dias positivos! Continue assim!`, type: 'streak' });
+        }
+
+        if(totalBalance < 0 && totalBalance >= -5) {
+          tips.push({ icon: '☕', text: `Saldo negativo em ${fmtTime(Math.abs(totalBalance))}. Faca uma hora extra hoje!`, type: 'warning' });
+        }
+
+        if(totalBalance < -5) {
+          tips.push({ icon: '⚡', text: `Atencao! Saldo de ${fmtTime(totalBalance)}. Considere repor as horas.`, type: 'danger' });
+        }
+
+        if(streak === 0 && totalBalance >= 0) {
+          tips.push({ icon: '🌅', text: 'Comece o dia registrando seu ponto na entrada!', type: 'info' });
+        }
+
+        if(totalBalance >= 0 && totalBalance < 2 && streak === 0) {
+          tips.push({ icon: '💡', text: 'Chegue 10min mais cedo e comece a construir seu saldo!', type: 'info' });
+        }
+
+        if(tips.length === 0) {
+          tips.push({ icon: '✨', text: 'Tudo certo! Continue mantendo seu ritmo.', type: 'info' });
+        }
+
+        return tips;
+      };
+
+      const handleSavePonto = () => {
+        if(!pontoDate) return;
+        if(editingPontoId) {
+          setTimeRecords(timeRecords.map(r => r.id===editingPontoId ? {...r, date:pontoDate, entrada:pontoEntrada, saida:pontoSaida} : r));
+          setEditingPontoId(null);
+        } else {
+          const exists = timeRecords.find(r => r.date===pontoDate);
+          if(exists) {
+            setTimeRecords(timeRecords.map(r => r.date===pontoDate ? {...r, entrada:pontoEntrada||r.entrada, saida:pontoSaida||r.saida} : r));
+          } else {
+            setTimeRecords([...timeRecords, {id:Date.now(), date:pontoDate, entrada:pontoEntrada, saida:pontoSaida}]);
+          }
+        }
+        setPontoEntrada(''); setPontoSaida(''); setPontoDate(new Date().toISOString().split('T')[0]);
+      };
+
+      const handleEditPonto = (r) => { setEditingPontoId(r.id); setPontoDate(r.date); setPontoEntrada(r.entrada); setPontoSaida(r.saida); };
+      const handleDeletePonto = (id) => { if(confirm('Excluir?')) setTimeRecords(timeRecords.filter(r=>r.id!==id)); };
+
+      const [manualRef, setManualRef] = useState('');
+      const [manualHrs, setManualHrs] = useState('');
+      const [manualTipo, setManualTipo] = useState('negativo');
+      const [editingManualId, setEditingManualId] = useState(null);
+
+      const handleSaveManual = () => {
+        if(!manualRef||!manualHrs) return;
+        const dec = parseTime(manualHrs);
+        if(editingManualId) {
+          setManualRecords(manualRecords.map(r=>r.id===editingManualId?{...r,ref:manualRef,hrsStr:manualHrs,tipo:manualTipo,decimal:dec}:r));
+          setEditingManualId(null);
+        } else {
+          setManualRecords([...manualRecords,{id:Date.now(),ref:manualRef,hrsStr:manualHrs,tipo:manualTipo,decimal:dec}]);
+        }
+        setManualRef(''); setManualHrs(''); setManualTipo('negativo');
+      };
+      const handleEditManual = (r) => { setEditingManualId(r.id); setManualRef(r.ref); setManualHrs(r.hrsStr); setManualTipo(r.tipo); setActiveTab('banco'); };
+      const handleDeleteManual = (id) => { if(confirm('Excluir?')) setManualRecords(manualRecords.filter(r=>r.id!==id)); };
+
+      const toggleDia = (i) => {
+        const dias = config.diasSemana.includes(i) ? config.diasSemana.filter(d=>d!==i) : [...config.diasSemana,i].sort();
+        setConfig({...config, diasSemana:dias});
+      };
+
+      const renderDashboard = () => {
+        const tips = getSmartTips();
+        const unlocked = ACHIEVEMENTS.filter(a => achievementsUnlocked.includes(a.id));
+        const locked = ACHIEVEMENTS.filter(a => !achievementsUnlocked.includes(a.id));
+
+        return (
+          <div className="space-y-4 slide-up">
+            <div className="glass p-5">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="text-3xl">{stats.level.icon}</div>
+                <div>
+                  <div className="text-[10px] uppercase opacity-40">Nivel</div>
+                  <div className="text-lg font-black">{stats.level.name}</div>
+                </div>
+                <div className="ml-auto text-right">
+                  <div className="text-[10px] uppercase opacity-40">XP</div>
+                  <div className="text-lg font-black text-purple-400">{stats.totalXP}</div>
+                </div>
+              </div>
+              <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                <div className="xp-bar h-full rounded-full" style={{width:`${Math.min(stats.xpProgress,100)}%`}}></div>
+              </div>
+              {stats.nextLevel && <div className="text-[9px] opacity-30 mt-1 text-right">{stats.nextLevel.name} em {stats.nextLevel.minXP - stats.totalXP} XP</div>}
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              <div className="glass p-4 text-center">
+                <div className="text-[9px] uppercase opacity-40 mb-1">Saldo Total</div>
+                <div className={`text-xl font-black ${stats.totalBalance>=0?'text-green-400':'text-red-400'}`}>{stats.totalBalance>=0?'+':''}{fmtTime(stats.totalBalance)}</div>
+              </div>
+              <div className="glass p-4 text-center">
+                <div className="text-[9px] uppercase opacity-40 mb-1">Sequencia</div>
+                <div className="flex items-center justify-center gap-1">
+                  {ICONS.fire}
+                  <span className="text-xl font-black text-orange-400">{stats.currentStreak}</span>
+                </div>
+              </div>
+              <div className="glass p-4 text-center">
+                <div className="text-[9px] uppercase opacity-40 mb-1">Folgas</div>
+                <div className="flex items-center justify-center gap-1">
+                  {ICONS.gift}
+                  <span className="text-xl font-black text-yellow-400">{stats.folgasPossiveis}</span>
+                </div>
+              </div>
+            </div>
+
+            {stats.totalBalance > 0 && stats.horasParaProxFolga > 0 && (
+              <div className="glass p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[9px] uppercase opacity-40">Proxima Folga</span>
+                  <span className="text-[10px] font-bold">{fmtTime(stats.totalBalance % stats.diasParaFolga)} / {fmtTime(stats.diasParaFolga)}</span>
+                </div>
+                <div className="h-3 bg-white/10 rounded-full overflow-hidden">
+                  <div className="progress-bar-green h-full rounded-full" style={{width:`${Math.min(((stats.totalBalance % stats.diasParaFolga)/stats.diasParaFolga)*100,100)}%`}}></div>
+                </div>
+                <div className="text-[9px] opacity-30 mt-1">Faltam {fmtTime(stats.horasParaProxFolga)} para completar</div>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              {tips.map((tip, i) => (
+                <div key={i} className={`glass p-4 flex items-start gap-3 ${
+                  tip.type==='success'?'border-green-800/50':''
+                }${tip.type==='danger'?'border-red-800/50':''}
+                }`}>
+                  <span className="text-xl">{tip.icon}</span>
+                  <span className="text-sm font-medium">{tip.text}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="glass p-5">
+              <div className="flex items-center gap-2 mb-4">
+                {ICONS.trophy}
+                <span className="text-[10px] font-black uppercase opacity-50">Conquistas ({unlocked.length}/{ACHIEVEMENTS.length})</span>
+              </div>
+              <div className="grid grid-cols-4 gap-3">
+                {ACHIEVEMENTS.map(a => {
+                  const done = achievementsUnlocked.includes(a.id);
+                  return (
+                    <div key={a.id} className={`text-center p-2 rounded-xl ${done?'bg-white/5':'achievement-locked'}`}>
+                      <div className="text-2xl mb-1">{a.icon}</div>
+                      <div className="text-[8px] font-bold leading-tight">{a.name}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="glass p-5">
+              <div className="flex items-center gap-2 mb-3">
+                {ICONS.zap}
+                <span className="text-[10px] font-black uppercase opacity-50">Resumo do Mes</span>
+              </div>
+              <div className="grid grid-cols-2 gap-3 text-center">
+                <div className="bg-white/5 rounded-xl p-3">
+                  <div className="text-[9px] uppercase opacity-40">Pontos Registrados</div>
+                  <div className="text-lg font-black">{filteredTime.length}</div>
+                </div>
+                <div className="bg-white/5 rounded-xl p-3">
+                  <div className="text-[9px] uppercase opacity-40">Saldo do Mes</div>
+                  <div className={`text-lg font-black ${monthBalance>=0?'text-green-400':'text-red-400'}`}>{monthBalance>=0?'+':''}{fmtTime(monthBalance)}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      };
+
+      const renderPonto = () => (
+        <div className="space-y-4 slide-up">
+          <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+            {allMonths.map(m => (
+              <button key={m} onClick={()=>setFilterMonth(m)} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase whitespace-nowrap transition-colors ${filterMonth===m?'bg-white/10 text-white':'text-white/30'}`}>{m}</button>
+            ))}
+          </div>
+
+          <div className={`p-4 rounded-2xl ${monthBalance>=0?'bg-green-900/20 border border-green-800/30':'bg-red-900/20 border border-red-800/30'}`}>
+            <div className="text-[9px] uppercase opacity-50 mb-1">Saldo do Mes</div>
+            <div className={`text-2xl font-black ${monthBalance>=0?'text-green-400':'text-red-400'}`}>{monthBalance>=0?'+':''}{fmtTime(monthBalance)}</div>
+          </div>
+
+          <div className="glass p-5">
+            <h3 className="text-[10px] font-black uppercase mb-4 opacity-50">{editingPontoId?'Editar Registro':'Registrar Ponto'}</h3>
+            <div className="grid grid-cols-3 gap-2 mb-3">
+              <input type="date" value={pontoDate} onChange={e=>setPontoDate(e.target.value)} className="p-3 rounded-xl bg-white/5 border border-white/10 w-full text-[11px] font-bold outline-none" />
+              <input type="time" value={pontoEntrada} onChange={e=>setPontoEntrada(e.target.value)} placeholder="Entrada" className="p-3 rounded-xl bg-white/5 border border-white/10 w-full text-center font-bold outline-none" />
+              <input type="time" value={pontoSaida} onChange={e=>setPontoSaida(e.target.value)} placeholder="Saida" className="p-3 rounded-xl bg-white/5 border border-white/10 w-full text-center font-bold outline-none" />
+            </div>
+            <button onClick={handleSavePonto} className="btn-makro w-full py-4 rounded-xl text-xs text-white">{editingPontoId?'Atualizar':'Salvar Ponto'}</button>
+          </div>
+
+          <div className="glass overflow-hidden">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-white/5 text-[9px] font-black uppercase opacity-40">
+                <tr><th className="p-3">Data</th><th className="p-3">Ent</th><th className="p-3">Sai</th><th className="p-3">Feitas</th><th className="p-3">Saldo</th><th className="p-3"></th></tr>
+              </thead>
+              <tbody>
+                {filteredTime.map(r => {
+                  const worked = (r.entrada&&r.saida&&isWorkDay(r.date)) ? parseTime(r.saida)-parseTime(r.entrada) : null;
+                  const saldo = worked!==null ? worked-expectedHours : null;
+                  const d = new Date(r.date+'T12:00:00');
+                  return (
+                    <tr key={r.id} className="border-b border-white/5">
+                      <td className="p-3"><span className="font-bold">{d.getDate().toString().padStart(2,'0')}</span><span className="text-[10px] opacity-40 ml-1">{DIA_NOMES[d.getDay()]}</span></td>
+                      <td className="p-3 font-mono text-[12px]">{r.entrada||'--:--'}</td>
+                      <td className="p-3 font-mono text-[12px]">{r.saida||'--:--'}</td>
+                      <td className="p-3 font-mono text-[12px]">{worked!==null?fmtTime(worked):'--:--'}</td>
+                      <td className={`p-3 font-bold text-[12px] ${saldo===null?'opacity-30':saldo>=0?'text-green-500':'text-red-500'}`}>{saldo!==null?`${saldo>=0?'+':''}${fmtTime(saldo)}`:'--'}</td>
+                      <td className="p-3 flex gap-1">
+                        <button onClick={()=>handleEditPonto(r)} className="opacity-50 hover:opacity-100 p-1">{ICONS.edit}</button>
+                        <button onClick={()=>handleDeletePonto(r.id)} className="text-red-500 opacity-50 hover:opacity-100 p-1">{ICONS.trash}</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {filteredTime.length===0 && <tr><td colSpan="6" className="p-6 text-center text-xs opacity-30">Nenhum registro</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+
+      const renderBanco = () => (
+        <div className="space-y-4 slide-up">
+          <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+            {allMonths.map(m => (
+              <button key={m} onClick={()=>setFilterMonth(m)} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase whitespace-nowrap transition-colors ${filterMonth===m?'bg-white/10 text-white':'text-white/30'}`}>{m}</button>
+            ))}
+          </div>
+
+          <div className="glass p-5">
+            <h3 className="text-[10px] font-black uppercase mb-4 opacity-50">{editingManualId?'Editando':'Lancamento Manual'}</h3>
+            <div className="grid grid-cols-3 gap-2 mb-3">
+              <select value={manualRef} onChange={e=>setManualRef(e.target.value)} className="p-3 rounded-xl bg-white/5 border border-white/10 w-full outline-none text-white text-[11px] font-bold">
+                <option value="">Ref.</option>
+                {allMonths.map(m=><option key={m} value={m}>{m}</option>)}
+              </select>
+              <button onClick={()=>setManualTipo(manualTipo==='positivo'?'negativo':'positivo')} className={`p-3 rounded-xl border border-white/10 flex items-center justify-center font-bold text-[10px] uppercase transition-colors ${manualTipo==='negativo'?'bg-red-900/30 text-red-500':'bg-green-900/30 text-green-500'}`}>
+                {manualTipo==='positivo'?'+ Pos':'- Neg'}
+              </button>
+              <input type="text" placeholder="00:00" value={manualHrs} onChange={e=>setManualHrs(e.target.value)} className="p-3 rounded-xl bg-white/5 border border-white/10 w-full text-center outline-none" />
+            </div>
+            <button onClick={handleSaveManual} className="btn-makro w-full py-4 rounded-xl text-xs text-white">{editingManualId?'Atualizar':'Adicionar'}</button>
+          </div>
+
+          <div className="glass overflow-hidden">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-white/5 text-[9px] font-black uppercase opacity-40">
+                <tr><th className="p-4">Ref</th><th className="p-4">Tempo</th><th className="p-4">Acoes</th></tr>
+              </thead>
+              <tbody>
+                {[...filteredManual].reverse().map(r => (
+                  <tr key={r.id} className="border-b border-white/5">
+                    <td className="p-4 font-bold">{r.ref}</td>
+                    <td className={`p-4 font-bold ${r.tipo==='positivo'?'text-green-500':'text-red-500'}`}>{r.tipo==='positivo'?'+':'-'}{r.hrsStr}</td>
+                    <td className="p-4 flex gap-2">
+                      <button onClick={()=>handleEditManual(r)} className="opacity-50 hover:opacity-100">{ICONS.edit}</button>
+                      <button onClick={()=>handleDeleteManual(r.id)} className="text-red-500 opacity-50 hover:opacity-100">{ICONS.trash}</button>
+                    </td>
+                  </tr>
+                ))}
+                {filteredManual.length===0 && <tr><td colSpan="3" className="p-6 text-center text-xs opacity-30">Nenhum lancamento</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+
+      const renderHistorico = () => {
+        const allRecords = [];
+        filteredTime.forEach(r => {
+          const worked = (r.entrada&&r.saida&&isWorkDay(r.date)) ? parseTime(r.saida)-parseTime(r.entrada) : null;
+          const saldo = worked!==null ? worked-expectedHours : null;
+          allRecords.push({ type:'ponto', date:r.date, entrada:r.entrada, saida:r.saida, worked, saldo, id:r.id });
+        });
+        filteredManual.forEach(r => {
+          const dateFromRef = r.ref;
+          allRecords.push({ type:'manual', date:dateFromRef, hrsStr:r.hrsStr, tipo:r.tipo, decimal:r.decimal, id:r.id });
+        });
+
+        const diasTrabalhados = filteredTime.filter(r => r.entrada && r.saida && isWorkDay(r.date)).length;
+        const diasPositivos = filteredTime.filter(r => {
+          if(!r.entrada||!r.saida||!isWorkDay(r.date)) return false;
+          return (parseTime(r.saida)-parseTime(r.entrada)) > expectedHours;
+        }).length;
+        const totalHorasTrabalhadas = filteredTime.reduce((acc, r) => {
+          if(r.entrada&&r.saida&&isWorkDay(r.date)) return acc + (parseTime(r.saida)-parseTime(r.entrada));
+          return acc;
+        }, 0);
+
+        return (
+          <div className="space-y-4 slide-up">
+            <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+              {allMonths.map(m => (
+                <button key={m} onClick={()=>setFilterMonth(m)} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase whitespace-nowrap transition-colors ${filterMonth===m?'bg-white/10 text-white':'text-white/30'}`}>{m}</button>
+              ))}
+            </div>
+
+            <div className={`p-4 rounded-2xl ${monthBalance>=0?'bg-green-900/20 border border-green-800/30':'bg-red-900/20 border border-red-800/30'}`}>
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <div className="text-[9px] uppercase opacity-50">Historico</div>
+                  <div className="text-lg font-black">{filterMonth}</div>
+                </div>
+                <div className={`text-2xl font-black ${monthBalance>=0?'text-green-400':'text-red-400'}`}>{monthBalance>=0?'+':''}{fmtTime(monthBalance)}</div>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="bg-white/5 rounded-xl p-2">
+                  <div className="text-[8px] uppercase opacity-40">Dias Trab.</div>
+                  <div className="text-sm font-black">{diasTrabalhados}</div>
+                </div>
+                <div className="bg-white/5 rounded-xl p-2">
+                  <div className="text-[8px] uppercase opacity-40">Positivos</div>
+                  <div className="text-sm font-black text-green-400">{diasPositivos}</div>
+                </div>
+                <div className="bg-white/5 rounded-xl p-2">
+                  <div className="text-[8px] uppercase opacity-40">Total Feito</div>
+                  <div className="text-sm font-black">{fmtTime(totalHorasTrabalhadas)}</div>
+                </div>
+              </div>
+            </div>
+
+            {filteredTime.length > 0 && (
+              <div className="glass overflow-hidden">
+                <div className="p-4 pb-2">
+                  <div className="text-[10px] font-black uppercase opacity-50">Registros de Ponto</div>
+                </div>
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-white/5 text-[9px] font-black uppercase opacity-40">
+                    <tr><th className="p-3">Data</th><th className="p-3">Ent</th><th className="p-3">Sai</th><th className="p-3">Feitas</th><th className="p-3">Saldo</th></tr>
+                  </thead>
+                  <tbody>
+                    {[...filteredTime].sort((a,b)=>a.date.localeCompare(b.date)).map(r => {
+                      const worked = (r.entrada&&r.saida&&isWorkDay(r.date)) ? parseTime(r.saida)-parseTime(r.entrada) : null;
+                      const saldo = worked!==null ? worked-expectedHours : null;
+                      const d = new Date(r.date+'T12:00:00');
+                      return (
+                        <tr key={r.id} className="border-b border-white/5">
+                          <td className="p-3">
+                            <span className="font-bold">{d.getDate().toString().padStart(2,'0')}</span>
+                            <span className="text-[10px] opacity-40 ml-1">{DIA_NOMES[d.getDay()]}</span>
+                          </td>
+                          <td className="p-3 font-mono text-[12px]">{r.entrada||'--:--'}</td>
+                          <td className="p-3 font-mono text-[12px]">{r.saida||'--:--'}</td>
+                          <td className="p-3 font-mono text-[12px]">{worked!==null?fmtTime(worked):'--:--'}</td>
+                          <td className={`p-3 font-bold text-[12px] ${saldo===null?'opacity-30':saldo>=0?'text-green-500':'text-red-500'}`}>{saldo!==null?`${saldo>=0?'+':''}${fmtTime(saldo)}`:'--'}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {filteredManual.length > 0 && (
+              <div className="glass overflow-hidden">
+                <div className="p-4 pb-2">
+                  <div className="text-[10px] font-black uppercase opacity-50">Lancamentos Manuais</div>
+                </div>
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-white/5 text-[9px] font-black uppercase opacity-40">
+                    <tr><th className="p-3">Tipo</th><th className="p-3">Horas</th></tr>
+                  </thead>
+                  <tbody>
+                    {filteredManual.map(r => (
+                      <tr key={r.id} className="border-b border-white/5">
+                        <td className="p-3">
+                          <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase ${r.tipo==='positivo'?'bg-green-900/40 text-green-400':'bg-red-900/40 text-red-400'}`}>
+                            {r.tipo==='positivo'?'+ Positivo':'- Negativo'}
+                          </span>
+                        </td>
+                        <td className={`p-3 font-bold ${r.tipo==='positivo'?'text-green-500':'text-red-500'}`}>{r.tipo==='positivo'?'+':'-'}{r.hrsStr}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {filteredTime.length===0 && filteredManual.length===0 && (
+              <div className="glass p-8 text-center">
+                <div className="text-3xl mb-2">📭</div>
+                <div className="text-sm opacity-40">Nenhum registro em {filterMonth}</div>
+              </div>
+            )}
+          </div>
+        );
+      };
+
+      const renderAjustes = () => (
+        <div className="space-y-4 slide-up">
+          <div className="glass p-6 space-y-4">
+            <h3 className="font-black uppercase text-[10px] opacity-50">Salario Base</h3>
+            <input type="number" value={config.salario} onChange={e=>setConfig({...config,salario:parseFloat(e.target.value)||0})} className="w-full p-4 rounded-xl bg-white/5 border border-white/10 text-xl font-bold outline-none" />
+            <p className="text-xs opacity-50">Valor hora: R$ {(config.salario/220).toFixed(2)}</p>
+          </div>
+          <div className="glass p-6 space-y-4">
+            <h3 className="font-black uppercase text-[10px] opacity-50">Carga Horaria</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="text-[9px] uppercase opacity-40 mb-1 block">Entrada</label><input type="time" value={config.entrada} onChange={e=>setConfig({...config,entrada:e.target.value})} className="w-full p-3 rounded-xl bg-white/5 border border-white/10 font-bold text-lg outline-none" /></div>
+              <div><label className="text-[9px] uppercase opacity-40 mb-1 block">Saida</label><input type="time" value={config.saida} onChange={e=>setConfig({...config,saida:e.target.value})} className="w-full p-3 rounded-xl bg-white/5 border border-white/10 font-bold text-lg outline-none" /></div>
+            </div>
+            <p className="text-xs opacity-50">Jornada: {fmtTime(expectedHours)} por dia</p>
+            <div>
+              <label className="text-[9px] uppercase opacity-40 mb-2 block">Dias de Trabalho</label>
+              <div className="flex gap-2">
+                {DIA_NOMES.map((n,i) => (
+                  <button key={i} onClick={()=>toggleDia(i)} className={`flex-1 py-2.5 rounded-lg text-[10px] font-black uppercase transition-colors ${config.diasSemana.includes(i)?'bg-red-900/50 text-red-400 border border-red-800':'bg-white/5 text-white/20 border border-white/5'}`}>{n}</button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+
+      return (
+        <div className="p-4 max-w-2xl mx-auto space-y-6">
+          {showAchievement && (
+            <div className="fixed top-4 left-4 right-4 z-50 slide-up">
+              <div className="glass glow-yellow p-4 flex items-center gap-3">
+                <span className="text-3xl">{showAchievement.icon}</span>
+                <div>
+                  <div className="text-[9px] uppercase opacity-50">Conquista Desbloqueada!</div>
+                  <div className="font-black">{showAchievement.name}</div>
+                  <div className="text-xs opacity-50">{showAchievement.desc}</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <header className="py-4 flex items-center justify-between">
+            <div>
+              <h1 className="text-xl font-black uppercase tracking-tight">Makro Time</h1>
+              <div className="flex items-center gap-1 text-[10px] opacity-40">
+                <span>{stats.level.icon}</span>
+                <span>{stats.level.name}</span>
+                <span className="mx-1">|</span>
+                <span>{stats.totalXP} XP</span>
+              </div>
+            </div>
+            <div className={`px-3 py-1.5 rounded-lg text-xs font-black ${stats.totalBalance>=0?'bg-green-900/40 text-green-400':'bg-red-900/40 text-red-400'}`}>
+              {stats.totalBalance>=0?'+':''}{fmtTime(stats.totalBalance)}
+            </div>
+          </header>
+
+          {activeTab==='dashboard' && renderDashboard()}
+          {activeTab==='ponto' && renderPonto()}
+          {activeTab==='historico' && renderHistorico()}
+          {activeTab==='banco' && renderBanco()}
+          {activeTab==='ajustes' && renderAjustes()}
+
+          <div className="fixed bottom-0 left-0 right-0 bg-[#090D14]/90 backdrop-blur-lg border-t border-white/10 p-2 flex justify-around">
+            {[{id:'dashboard',icon:ICONS.dashboard,label:'Home'},{id:'ponto',icon:ICONS.clock,label:'Ponto'},{id:'historico',icon:ICONS.history,label:'Historico'},{id:'banco',icon:ICONS.target,label:'Banco'},{id:'ajustes',icon:ICONS.settings,label:'Ajustes'}].map(t => (
+              <button key={t.id} onClick={()=>setActiveTab(t.id)} className={`flex flex-col items-center p-2 ${activeTab===t.id?'text-red-600':'opacity-40'}`}>
+                {t.icon}<span className="text-[9px] font-bold uppercase mt-1">{t.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
