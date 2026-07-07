@@ -97,14 +97,14 @@
     }
 
     function App() {
-      const defaultConfig = { salario: 1000, entrada: '07:50', saida: '17:38', diasSemana: [1,2,3,4,5] };
+      const defaultConfig = { salario: 0, entrada: '07:50', saida: '17:38', horasAlmoco: 1, diasSemana: [1,2,3,4,5], saldoInicialMin: 0 };
       const [apiUrl, setApiUrl] = useState(() => localStorage.getItem('makro_v02_apiurl') || '');
       const [syncing, setSyncing] = useState(false);
       const [config, setConfig] = useState(() => {
         const saved = localStorage.getItem('makro_v02_config');
         return saved ? { ...defaultConfig, ...JSON.parse(saved) } : defaultConfig;
       });
-      const [timeRecords, setTimeRecords] = useState(() => {
+      const [registros, setRegistros] = useState(() => {
         const saved = localStorage.getItem('makro_v02_time');
         return saved ? JSON.parse(saved) : [];
       });
@@ -129,8 +129,8 @@
       const [showAchievement, setShowAchievement] = useState(null);
 
       useEffect(() => { localStorage.setItem('makro_v02_apiurl', apiUrl); }, [apiUrl]);
-      useEffect(() => { localStorage.setItem('makro_v02_config', JSON.stringify(config)); if(apiUrl) apiCall(apiUrl,'saveConfig',config); }, [config]);
-      useEffect(() => { localStorage.setItem('makro_v02_time', JSON.stringify(timeRecords)); }, [timeRecords]);
+      useEffect(() => { localStorage.setItem('makro_v02_config', JSON.stringify(config)); }, [config]);
+      useEffect(() => { localStorage.setItem('makro_v02_time', JSON.stringify(registros)); }, [registros]);
       useEffect(() => { localStorage.setItem('makro_v02_manual', JSON.stringify(manualRecords)); }, [manualRecords]);
       useEffect(() => { localStorage.setItem('makro_v02_achievements', JSON.stringify(achievementsUnlocked)); }, [achievementsUnlocked]);
 
@@ -139,22 +139,20 @@
         setSyncing(true);
         const data = await apiCall(apiUrl, 'getAll');
         if(data && !data.error) {
-          if(data.config && data.config.salario) setConfig({...defaultConfig, ...data.config});
-          if(data.ponto) setTimeRecords(data.ponto);
-          if(data.manual) setManualRecords(data.manual);
-          if(data.achievements) setAchievementsUnlocked(data.achievements);
+          if(data.config && data.config.entrada) setConfig({...defaultConfig, ...data.config});
+          if(data.registros) setRegistros(data.registros);
         }
         setSyncing(false);
       };
 
-      const savePontoToSheet = async (ponto) => { if(apiUrl) await apiCall(apiUrl,'savePonto',ponto); };
-      const deletePontoFromSheet = async (id) => { if(apiUrl) await apiCall(apiUrl,'deletePonto',null); };
-      const saveManualToSheet = async (manual) => { if(apiUrl) await apiCall(apiUrl,'saveManual',manual); };
-      const deleteManualFromSheet = async (id) => { if(apiUrl) await apiCall(apiUrl,'deleteManual',null); };
+      const saveRegistroToSheet = async (reg) => { if(apiUrl) await apiCall(apiUrl,'saveRegistro',reg); };
+      const deleteRegistroFromSheet = async (date) => { if(apiUrl) await apiCall(apiUrl,'deleteRegistro',null); };
 
       const parseTime = (t) => { if(!t||!t.includes(':')) return 0; const [h,m] = t.split(':').map(Number); return (h||0)+((m||0)/60); };
       const fmtTime = (dec) => { const s=dec<0?'-':''; const a=Math.abs(dec); const h=Math.floor(a); const m=Math.round((a-h)*60); return `${s}${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`; };
-      const expectedHours = parseTime(config.saida) - parseTime(config.entrada);
+      const fmtMinutes = (min) => { const s=min<0?'-':''; const a=Math.abs(min); const h=Math.floor(a/60); const m=Math.round(a%60); return `${s}${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`; };
+      const expectedHours = parseTime(config.saida) - parseTime(config.entrada) - (config.horasAlmoco || 0);
+      const expectedMinutes = expectedHours * 60;
       const isWorkDay = (d) => { const dt = new Date(d+'T12:00:00'); return config.diasSemana.includes(dt.getDay()); };
       const getMonthKey = (d) => { const dt = new Date(d+'T12:00:00'); return dt.toLocaleDateString('pt-BR',{month:'short',year:'2-digit'}).toUpperCase(); };
 
@@ -164,14 +162,15 @@
       }, []);
 
       const stats = useMemo(() => {
-        let totalBalance = 0, totalXP = 0, totalPontos = timeRecords.length, totalManuals = manualRecords.length;
+        const saldoInicial = (config.saldoInicialMin || 0) / 60;
+        let totalBalance = saldoInicial, totalXP = 0, totalPontos = registros.length, totalManuals = manualRecords.length;
         let streak = 0, currentStreak = 0, perfectWeekDays = 0;
         let earliestEntry = null;
-        const sorted = [...timeRecords].sort((a,b) => a.date.localeCompare(b.date));
+        const sorted = [...registros].sort((a,b) => a.date.localeCompare(b.date));
 
         sorted.forEach(r => {
           if(r.entrada && r.saida && isWorkDay(r.date)) {
-            const worked = parseTime(r.saida) - parseTime(r.entrada);
+            const worked = parseTime(r.saida) - parseTime(r.entrada) - (config.horasAlmoco || 0);
             const diff = worked - expectedHours;
             totalBalance += diff;
             if(diff > 0) { currentStreak++; totalXP += Math.round(diff * 10); }
@@ -198,7 +197,7 @@
         const horasParaProxFolga = totalBalance >= 0 ? diasParaFolga - (totalBalance % diasParaFolga) : diasParaFolga + totalBalance;
 
         return { totalBalance, totalXP, totalPontos, totalManuals, streak, currentStreak, perfectWeekDays, earliestEntry, level, nextLevel, xpProgress, folgasPossiveis, horasParaProxFolga, diasParaFolga };
-      }, [timeRecords, manualRecords, config]);
+      }, [registros, manualRecords, config]);
 
       useEffect(() => {
         ACHIEVEMENTS.forEach(a => {
@@ -210,7 +209,7 @@
         });
       }, [stats]);
 
-      const filteredTime = useMemo(() => timeRecords.filter(r => getMonthKey(r.date)===filterMonth).sort((a,b)=>b.date.localeCompare(a.date)), [timeRecords, filterMonth]);
+      const filteredTime = useMemo(() => registros.filter(r => getMonthKey(r.date)===filterMonth).sort((a,b)=>b.date.localeCompare(a.date)), [registros, filterMonth]);
       const filteredManual = useMemo(() => manualRecords.filter(r => r.ref===filterMonth), [manualRecords, filterMonth]);
 
       const monthBalance = useMemo(() => {
@@ -265,27 +264,24 @@
 
       const handleSavePonto = () => {
         if(!pontoDate) return;
-        let record;
-        if(editingPontoId) {
-          record = {id:editingPontoId, date:pontoDate, entrada:pontoEntrada, saida:pontoSaida};
-          setTimeRecords(timeRecords.map(r => r.id===editingPontoId ? record : r));
-          setEditingPontoId(null);
+        const worked = (pontoEntrada && pontoSaida) ? parseTime(pontoSaida) - parseTime(pontoEntrada) - (config.horasAlmoco||0) : 0;
+        const diff = worked - expectedHours;
+        const saldoStr = `${diff>=0?'+':'-'}${fmtTime(Math.abs(diff))}`;
+        let record = { date:pontoDate, entrada:pontoEntrada, saida:pontoSaida, saldo:saldoStr };
+
+        const exists = registros.find(r => r.date===pontoDate);
+        if(exists) {
+          setRegistros(registros.map(r => r.date===pontoDate ? record : r));
         } else {
-          const exists = timeRecords.find(r => r.date===pontoDate);
-          if(exists) {
-            record = {...exists, entrada:pontoEntrada||exists.entrada, saida:pontoSaida||exists.saida};
-            setTimeRecords(timeRecords.map(r => r.date===pontoDate ? record : r));
-          } else {
-            record = {id:Date.now(), date:pontoDate, entrada:pontoEntrada, saida:pontoSaida};
-            setTimeRecords([...timeRecords, record]);
-          }
+          setRegistros([...registros, record]);
         }
-        savePontoToSheet(record);
+        saveRegistroToSheet(record);
         setPontoEntrada(''); setPontoSaida(''); setPontoDate(new Date().toISOString().split('T')[0]);
+        setEditingPontoId(null);
       };
 
-      const handleEditPonto = (r) => { setEditingPontoId(r.id); setPontoDate(r.date); setPontoEntrada(r.entrada); setPontoSaida(r.saida); };
-      const handleDeletePonto = (id) => { if(confirm('Excluir?')){ setTimeRecords(timeRecords.filter(r=>r.id!==id)); if(apiUrl) apiCall(apiUrl,'deletePonto',{id}); } };
+      const handleEditPonto = (r) => { setEditingPontoId(r.date); setPontoDate(r.date); setPontoEntrada(r.entrada); setPontoSaida(r.saida); };
+      const handleDeletePonto = (date) => { if(confirm('Excluir?')){ setRegistros(registros.filter(r=>r.date!==date)); if(apiUrl) apiCall(apiUrl,'deleteRegistro',{data:date}); } };
 
       const [manualRef, setManualRef] = useState('');
       const [manualHrs, setManualHrs] = useState('');
@@ -454,11 +450,11 @@
               </thead>
               <tbody>
                 {filteredTime.map(r => {
-                  const worked = (r.entrada&&r.saida&&isWorkDay(r.date)) ? parseTime(r.saida)-parseTime(r.entrada) : null;
+                  const worked = (r.entrada&&r.saida&&isWorkDay(r.date)) ? parseTime(r.saida)-parseTime(r.entrada)-(config.horasAlmoco||0) : null;
                   const saldo = worked!==null ? worked-expectedHours : null;
                   const d = new Date(r.date+'T12:00:00');
                   return (
-                    <tr key={r.id} className="border-b border-white/5">
+                    <tr key={r.date} className="border-b border-white/5">
                       <td className="p-3"><span className="font-bold">{d.getDate().toString().padStart(2,'0')}</span><span className="text-[10px] opacity-40 ml-1">{DIA_NOMES[d.getDay()]}</span></td>
                       <td className="p-3 font-mono text-[12px]">{r.entrada||'--:--'}</td>
                       <td className="p-3 font-mono text-[12px]">{r.saida||'--:--'}</td>
@@ -466,7 +462,7 @@
                       <td className={`p-3 font-bold text-[12px] ${saldo===null?'opacity-30':saldo>=0?'text-green-500':'text-red-500'}`}>{saldo!==null?`${saldo>=0?'+':''}${fmtTime(saldo)}`:'--'}</td>
                       <td className="p-3 flex gap-1">
                         <button onClick={()=>handleEditPonto(r)} className="opacity-50 hover:opacity-100 p-1">{ICONS.edit}</button>
-                        <button onClick={()=>handleDeletePonto(r.id)} className="text-red-500 opacity-50 hover:opacity-100 p-1">{ICONS.trash}</button>
+                        <button onClick={()=>handleDeletePonto(r.date)} className="text-red-500 opacity-50 hover:opacity-100 p-1">{ICONS.trash}</button>
                       </td>
                     </tr>
                   );
@@ -539,10 +535,10 @@
         const diasTrabalhados = filteredTime.filter(r => r.entrada && r.saida && isWorkDay(r.date)).length;
         const diasPositivos = filteredTime.filter(r => {
           if(!r.entrada||!r.saida||!isWorkDay(r.date)) return false;
-          return (parseTime(r.saida)-parseTime(r.entrada)) > expectedHours;
+          return (parseTime(r.saida)-parseTime(r.entrada)-(config.horasAlmoco||0)) > expectedHours;
         }).length;
         const totalHorasTrabalhadas = filteredTime.reduce((acc, r) => {
-          if(r.entrada&&r.saida&&isWorkDay(r.date)) return acc + (parseTime(r.saida)-parseTime(r.entrada));
+          if(r.entrada&&r.saida&&isWorkDay(r.date)) return acc + (parseTime(r.saida)-parseTime(r.entrada)-(config.horasAlmoco||0));
           return acc;
         }, 0);
 
@@ -589,11 +585,11 @@
                   </thead>
                   <tbody>
                     {[...filteredTime].sort((a,b)=>a.date.localeCompare(b.date)).map(r => {
-                      const worked = (r.entrada&&r.saida&&isWorkDay(r.date)) ? parseTime(r.saida)-parseTime(r.entrada) : null;
+                      const worked = (r.entrada&&r.saida&&isWorkDay(r.date)) ? parseTime(r.saida)-parseTime(r.entrada)-(config.horasAlmoco||0) : null;
                       const saldo = worked!==null ? worked-expectedHours : null;
                       const d = new Date(r.date+'T12:00:00');
                       return (
-                        <tr key={r.id} className="border-b border-white/5">
+                        <tr key={r.date} className="border-b border-white/5">
                           <td className="p-3">
                             <span className="font-bold">{d.getDate().toString().padStart(2,'0')}</span>
                             <span className="text-[10px] opacity-40 ml-1">{DIA_NOMES[d.getDay()]}</span>
@@ -658,7 +654,11 @@
               <div><label className="text-[9px] uppercase opacity-40 mb-1 block">Entrada</label><input type="time" value={config.entrada} onChange={e=>setConfig({...config,entrada:e.target.value})} className="w-full p-3 rounded-xl bg-white/5 border border-white/10 font-bold text-lg outline-none" /></div>
               <div><label className="text-[9px] uppercase opacity-40 mb-1 block">Saida</label><input type="time" value={config.saida} onChange={e=>setConfig({...config,saida:e.target.value})} className="w-full p-3 rounded-xl bg-white/5 border border-white/10 font-bold text-lg outline-none" /></div>
             </div>
-            <p className="text-xs opacity-50">Jornada: {fmtTime(expectedHours)} por dia</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="text-[9px] uppercase opacity-40 mb-1 block">Almoco (horas)</label><input type="number" step="0.5" value={config.horasAlmoco} onChange={e=>setConfig({...config,horasAlmoco:parseFloat(e.target.value)||0})} className="w-full p-3 rounded-xl bg-white/5 border border-white/10 font-bold text-lg outline-none" /></div>
+              <div><label className="text-[9px] uppercase opacity-40 mb-1 block">Saldo Inicial (min)</label><input type="number" value={config.saldoInicialMin} onChange={e=>setConfig({...config,saldoInicialMin:parseInt(e.target.value)||0})} className="w-full p-3 rounded-xl bg-white/5 border border-white/10 font-bold text-lg outline-none" /></div>
+            </div>
+            <p className="text-xs opacity-50">Jornada liquida: {fmtTime(expectedHours)} por dia</p>
             <div>
               <label className="text-[9px] uppercase opacity-40 mb-2 block">Dias de Trabalho</label>
               <div className="flex gap-2">
@@ -680,8 +680,7 @@
               <button onClick={async()=>{
                 if(!apiUrl) return;
                 setSyncing(true);
-                for(const r of timeRecords) await apiCall(apiUrl,'savePonto',r);
-                for(const r of manualRecords) await apiCall(apiUrl,'saveManual',r);
+                for(const r of registros) await apiCall(apiUrl,'saveRegistro',r);
                 await apiCall(apiUrl,'saveConfig',config);
                 setSyncing(false);
                 alert('Dados enviados para a planilha!');
