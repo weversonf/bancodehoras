@@ -154,6 +154,14 @@ function getAll(ss) {
   };
 }
 
+// ---------- TESTE (Execute esta funcao para testar) ----------
+function testar() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const result = getAll(ss);
+  Logger.log(JSON.stringify(result, null, 2));
+  SpreadsheetApp.getUi().alert('Teste OK!\n\n' + JSON.stringify(result, null, 2));
+}
+
 // ---------- HELPERS ----------
 function formatDate(val) {
   if(!val) return '';
