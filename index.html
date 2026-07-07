@@ -111,15 +111,6 @@
       const [manualRecords, setManualRecords] = useState([]);
       const [achievementsUnlocked, setAchievementsUnlocked] = useState([]);
       const [loading, setLoading] = useState(true);
-      });
-      const [manualRecords, setManualRecords] = useState(() => {
-        const saved = localStorage.getItem('makro_v02_manual');
-        return saved ? JSON.parse(saved) : [];
-      });
-      const [achievementsUnlocked, setAchievementsUnlocked] = useState(() => {
-        const saved = localStorage.getItem('makro_v02_achievements');
-        return saved ? JSON.parse(saved) : [];
-      });
 
       const [activeTab, setActiveTab] = useState('dashboard');
       const [filterMonth, setFilterMonth] = useState(() => {
@@ -154,16 +145,6 @@
         loadData();
       }, []);
 
-      useEffect(() => {
-        if(!loading) saveConfigToFB(config);
-      }, [config, loading]);
-
-      useEffect(() => {
-        if(!loading && achievementsUnlocked.length > 0) {
-          achievementsUnlocked.forEach(id => saveAchievementToFB(id));
-        }
-      }, [achievementsUnlocked, loading]);
-
       const saveConfigToFB = async (cfg) => {
         try { await db.collection('config').doc('main').set(cfg); } catch(e) { console.error(e); }
       };
@@ -194,10 +175,19 @@
         try { await db.collection('achievements').doc(achId).set({unlockedAt: new Date().toISOString()}); } catch(e) { console.error(e); }
       };
 
+      useEffect(() => {
+        if(!loading) saveConfigToFB(config);
+      }, [config, loading]);
+
+      useEffect(() => {
+        if(!loading && achievementsUnlocked.length > 0) {
+          achievementsUnlocked.forEach(id => saveAchievementToFB(id));
+        }
+      }, [achievementsUnlocked, loading]);
+
       const parseTime = (t) => { if(!t||!t.includes(':')) return 0; const [h,m] = t.split(':').map(Number); return (h||0)+((m||0)/60); };
       const fmtTime = (dec) => { const s=dec<0?'-':''; const a=Math.abs(dec); const h=Math.floor(a); const m=Math.round((a-h)*60); return `${s}${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`; };
       const expectedHours = parseTime(config.saida) - parseTime(config.entrada) - (config.horasAlmoco || 0);
-      const expectedMinutes = expectedHours * 60;
       const isWorkDay = (d) => { const dt = new Date(d+'T12:00:00'); return config.diasSemana.includes(dt.getDay()); };
       const getMonthKey = (d) => { const dt = new Date(d+'T12:00:00'); return dt.toLocaleDateString('pt-BR',{month:'short',year:'2-digit'}).toUpperCase(); };
 
@@ -259,7 +249,7 @@
 
       const monthBalance = useMemo(() => {
         let b = 0;
-        filteredTime.forEach(r => { if(r.entrada&&r.saida&&isWorkDay(r.date)) b += (parseTime(r.saida)-parseTime(r.entrada))-expectedHours; });
+        filteredTime.forEach(r => { if(r.entrada&&r.saida&&isWorkDay(r.date)) b += (parseTime(r.saida)-parseTime(r.entrada)-(config.horasAlmoco||0))-expectedHours; });
         filteredManual.forEach(r => { b += r.tipo==='positivo' ? r.decimal : -r.decimal; });
         return b;
       }, [filteredTime, filteredManual, config]);
@@ -359,7 +349,6 @@
       const renderDashboard = () => {
         const tips = getSmartTips();
         const unlocked = ACHIEVEMENTS.filter(a => achievementsUnlocked.includes(a.id));
-        const locked = ACHIEVEMENTS.filter(a => !achievementsUnlocked.includes(a.id));
 
         return (
           <div className="space-y-4 slide-up">
@@ -519,64 +508,7 @@
         </div>
       );
 
-      const renderBanco = () => (
-        <div className="space-y-4 slide-up">
-          <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
-            {allMonths.map(m => (
-              <button key={m} onClick={()=>setFilterMonth(m)} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase whitespace-nowrap transition-colors ${filterMonth===m?'bg-white/10 text-white':'text-white/30'}`}>{m}</button>
-            ))}
-          </div>
-
-          <div className="glass p-5">
-            <h3 className="text-[10px] font-black uppercase mb-4 opacity-50">{editingManualId?'Editando':'Lancamento Manual'}</h3>
-            <div className="grid grid-cols-3 gap-2 mb-3">
-              <select value={manualRef} onChange={e=>setManualRef(e.target.value)} className="p-3 rounded-xl bg-white/5 border border-white/10 w-full outline-none text-white text-[11px] font-bold">
-                <option value="">Ref.</option>
-                {allMonths.map(m=><option key={m} value={m}>{m}</option>)}
-              </select>
-              <button onClick={()=>setManualTipo(manualTipo==='positivo'?'negativo':'positivo')} className={`p-3 rounded-xl border border-white/10 flex items-center justify-center font-bold text-[10px] uppercase transition-colors ${manualTipo==='negativo'?'bg-red-900/30 text-red-500':'bg-green-900/30 text-green-500'}`}>
-                {manualTipo==='positivo'?'+ Pos':'- Neg'}
-              </button>
-              <input type="text" placeholder="00:00" value={manualHrs} onChange={e=>setManualHrs(e.target.value)} className="p-3 rounded-xl bg-white/5 border border-white/10 w-full text-center outline-none" />
-            </div>
-            <button onClick={handleSaveManual} className="btn-makro w-full py-4 rounded-xl text-xs text-white">{editingManualId?'Atualizar':'Adicionar'}</button>
-          </div>
-
-          <div className="glass overflow-hidden">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-white/5 text-[9px] font-black uppercase opacity-40">
-                <tr><th className="p-4">Ref</th><th className="p-4">Tempo</th><th className="p-4">Acoes</th></tr>
-              </thead>
-              <tbody>
-                {[...filteredManual].reverse().map(r => (
-                  <tr key={r.id} className="border-b border-white/5">
-                    <td className="p-4 font-bold">{r.ref}</td>
-                    <td className={`p-4 font-bold ${r.tipo==='positivo'?'text-green-500':'text-red-500'}`}>{r.tipo==='positivo'?'+':'-'}{r.hrsStr}</td>
-                    <td className="p-4 flex gap-2">
-                      <button onClick={()=>handleEditManual(r)} className="opacity-50 hover:opacity-100">{ICONS.edit}</button>
-                      <button onClick={()=>handleDeleteManual(r.id)} className="text-red-500 opacity-50 hover:opacity-100">{ICONS.trash}</button>
-                    </td>
-                  </tr>
-                ))}
-                {filteredManual.length===0 && <tr><td colSpan="3" className="p-6 text-center text-xs opacity-30">Nenhum lancamento</td></tr>}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      );
-
       const renderHistorico = () => {
-        const allRecords = [];
-        filteredTime.forEach(r => {
-          const worked = (r.entrada&&r.saida&&isWorkDay(r.date)) ? parseTime(r.saida)-parseTime(r.entrada) : null;
-          const saldo = worked!==null ? worked-expectedHours : null;
-          allRecords.push({ type:'ponto', date:r.date, entrada:r.entrada, saida:r.saida, worked, saldo, id:r.id });
-        });
-        filteredManual.forEach(r => {
-          const dateFromRef = r.ref;
-          allRecords.push({ type:'manual', date:dateFromRef, hrsStr:r.hrsStr, tipo:r.tipo, decimal:r.decimal, id:r.id });
-        });
-
         const diasTrabalhados = filteredTime.filter(r => r.entrada && r.saida && isWorkDay(r.date)).length;
         const diasPositivos = filteredTime.filter(r => {
           if(!r.entrada||!r.saida||!isWorkDay(r.date)) return false;
@@ -685,6 +617,52 @@
           </div>
         );
       };
+
+      const renderBanco = () => (
+        <div className="space-y-4 slide-up">
+          <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+            {allMonths.map(m => (
+              <button key={m} onClick={()=>setFilterMonth(m)} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase whitespace-nowrap transition-colors ${filterMonth===m?'bg-white/10 text-white':'text-white/30'}`}>{m}</button>
+            ))}
+          </div>
+
+          <div className="glass p-5">
+            <h3 className="text-[10px] font-black uppercase mb-4 opacity-50">{editingManualId?'Editando':'Lancamento Manual'}</h3>
+            <div className="grid grid-cols-3 gap-2 mb-3">
+              <select value={manualRef} onChange={e=>setManualRef(e.target.value)} className="p-3 rounded-xl bg-white/5 border border-white/10 w-full outline-none text-white text-[11px] font-bold">
+                <option value="">Ref.</option>
+                {allMonths.map(m=><option key={m} value={m}>{m}</option>)}
+              </select>
+              <button onClick={()=>setManualTipo(manualTipo==='positivo'?'negativo':'positivo')} className={`p-3 rounded-xl border border-white/10 flex items-center justify-center font-bold text-[10px] uppercase transition-colors ${manualTipo==='negativo'?'bg-red-900/30 text-red-500':'bg-green-900/30 text-green-500'}`}>
+                {manualTipo==='positivo'?'+ Pos':'- Neg'}
+              </button>
+              <input type="text" placeholder="00:00" value={manualHrs} onChange={e=>setManualHrs(e.target.value)} className="p-3 rounded-xl bg-white/5 border border-white/10 w-full text-center outline-none" />
+            </div>
+            <button onClick={handleSaveManual} className="btn-makro w-full py-4 rounded-xl text-xs text-white">{editingManualId?'Atualizar':'Adicionar'}</button>
+          </div>
+
+          <div className="glass overflow-hidden">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-white/5 text-[9px] font-black uppercase opacity-40">
+                <tr><th className="p-4">Ref</th><th className="p-4">Tempo</th><th className="p-4">Acoes</th></tr>
+              </thead>
+              <tbody>
+                {[...filteredManual].reverse().map(r => (
+                  <tr key={r.id} className="border-b border-white/5">
+                    <td className="p-4 font-bold">{r.ref}</td>
+                    <td className={`p-4 font-bold ${r.tipo==='positivo'?'text-green-500':'text-red-500'}`}>{r.tipo==='positivo'?'+':'-'}{r.hrsStr}</td>
+                    <td className="p-4 flex gap-2">
+                      <button onClick={()=>handleEditManual(r)} className="opacity-50 hover:opacity-100">{ICONS.edit}</button>
+                      <button onClick={()=>handleDeleteManual(r.id)} className="text-red-500 opacity-50 hover:opacity-100">{ICONS.trash}</button>
+                    </td>
+                  </tr>
+                ))}
+                {filteredManual.length===0 && <tr><td colSpan="3" className="p-6 text-center text-xs opacity-30">Nenhum lancamento</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
 
       const renderAjustes = () => (
         <div className="space-y-4 slide-up">
