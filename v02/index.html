@@ -678,19 +678,31 @@
             <input type="text" value={apiUrl} onChange={e=>setApiUrl(e.target.value)} placeholder="https://script.google.com/macros/s/..." className="w-full p-3 rounded-xl bg-white/5 border border-white/10 text-xs font-bold outline-none" />
             <div className="flex gap-2">
               <button onClick={syncFromSheet} disabled={!apiUrl||syncing} className={`flex-1 py-3 rounded-xl text-xs font-black uppercase ${apiUrl?'btn-makro text-white':'bg-white/5 text-white/20 cursor-not-allowed'}`}>
-                {syncing?'Sincronizando...':'Sincronizar'}
+                {syncing?'Sincronizando...':'Baixar da Planilha'}
               </button>
               <button onClick={async()=>{
-                if(!apiUrl) return;
+                if(!apiUrl) { alert('Cole a URL do Apps Script!'); return; }
                 setSyncing(true);
-                for(const r of registros) await apiCall(apiUrl,'saveRegistro',r);
-                await apiCall(apiUrl,'saveConfig',config);
+                let erros = 0;
+                let enviados = 0;
+                for(const r of registros) {
+                  const res = await apiCall(apiUrl,'saveRegistro',r);
+                  if(res && !res.error) enviados++; else erros++;
+                }
+                const resConfig = await apiCall(apiUrl,'saveConfig',config);
                 setSyncing(false);
-                alert('Dados enviados para a planilha!');
+                alert('Registros enviados: ' + enviados + '\nErros: ' + erros + '\nConfig: ' + (resConfig?.error || 'OK'));
               }} disabled={!apiUrl||syncing} className={`flex-1 py-3 rounded-xl text-xs font-black uppercase ${apiUrl?'bg-green-900/50 text-green-400 border border-green-800':'bg-white/5 text-white/20 cursor-not-allowed'}`}>
-                Enviar Tudo
+                {syncing?'Enviando...':'Enviar p/ Planilha'}
               </button>
             </div>
+            <button onClick={async()=>{
+              if(!apiUrl) { alert('Cole a URL!'); return; }
+              const res = await apiCall(apiUrl, 'testar');
+              alert('Teste: ' + JSON.stringify(res));
+            }} className="w-full py-2 rounded-lg text-[10px] font-bold uppercase text-white/30 border border-white/10">
+              Testar Conexao
+            </button>
           </div>
         </div>
       );

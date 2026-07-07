@@ -66,13 +66,19 @@ function handleRequest(e) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var result;
   try {
+    var body = null;
+    if(e.postData && e.postData.contents) {
+      try { body = JSON.parse(e.postData.contents); } catch(x) {}
+    }
+    
     if(action === 'getAll') result = getAll(ss);
     else if(action === 'getConfig') result = getConfig(ss);
-    else if(action === 'saveConfig') result = saveConfig(ss, JSON.parse(e.postData.contents));
+    else if(action === 'saveConfig' && body) result = saveConfig(ss, body);
     else if(action === 'getRegistros') result = getRegistros(ss);
-    else if(action === 'saveRegistro') result = saveRegistro(ss, JSON.parse(e.postData.contents));
+    else if(action === 'saveRegistro' && body) result = saveRegistro(ss, body);
     else if(action === 'deleteRegistro') result = deleteRegistro(ss, e.parameter.data);
-    else result = {error: 'Acao desconhecida'};
+    else if(action === 'testar') result = {ok: true, abas: ss.getSheets().map(function(s){return s.getName()}), config: getConfig(ss), registros: getRegistros(ss).length};
+    else result = {error: 'Acao desconhecida: ' + action};
   } catch(err) {
     result = {error: err.message};
   }
