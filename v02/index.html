@@ -83,16 +83,16 @@
     const DIA_NOMES = ['Dom','Seg','Ter','Qua','Qui','Sex','Sab'];
 
     async function apiCall(url, action, data = null) {
-      if(!url) return null;
+      if(!url) return {error: 'URL nao configurada'};
       const sep = url.includes('?') ? '&' : '?';
       const fullUrl = `${url}${sep}action=${action}`;
       try {
         const opts = data ? { method:'POST', body:JSON.stringify(data), headers:{'Content-Type':'application/json'} } : {};
         const res = await fetch(fullUrl, opts);
-        return await res.json();
+        const text = await res.text();
+        try { return JSON.parse(text); } catch(e) { return {error: 'Resposta invalida: ' + text.substring(0, 100)}; }
       } catch(e) {
-        console.error('API error:', e);
-        return null;
+        return {error: e.message};
       }
     }
 
@@ -135,12 +135,15 @@
       useEffect(() => { localStorage.setItem('makro_v02_achievements', JSON.stringify(achievementsUnlocked)); }, [achievementsUnlocked]);
 
       const syncFromSheet = async () => {
-        if(!apiUrl) return;
+        if(!apiUrl) { alert('Configure a URL do Apps Script primeiro!'); return; }
         setSyncing(true);
         const data = await apiCall(apiUrl, 'getAll');
         if(data && !data.error) {
           if(data.config && data.config.entrada) setConfig({...defaultConfig, ...data.config});
           if(data.registros) setRegistros(data.registros);
+          alert('Sincronizado!\nConfig: ' + JSON.stringify(data.config) + '\nRegistros: ' + (data.registros||[]).length);
+        } else {
+          alert('Erro ao sincronizar:\n' + (data?.error || 'Resposta vazia'));
         }
         setSyncing(false);
       };
