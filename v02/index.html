@@ -82,8 +82,24 @@
 
     const DIA_NOMES = ['Dom','Seg','Ter','Qua','Qui','Sex','Sab'];
 
+    async function apiCall(url, action, data = null) {
+      if(!url) return null;
+      const sep = url.includes('?') ? '&' : '?';
+      const fullUrl = `${url}${sep}action=${action}`;
+      try {
+        const opts = data ? { method:'POST', body:JSON.stringify(data), headers:{'Content-Type':'application/json'} } : {};
+        const res = await fetch(fullUrl, opts);
+        return await res.json();
+      } catch(e) {
+        console.error('API error:', e);
+        return null;
+      }
+    }
+
     function App() {
       const defaultConfig = { salario: 1000, entrada: '07:50', saida: '17:38', diasSemana: [1,2,3,4,5] };
+      const [apiUrl, setApiUrl] = useState(() => localStorage.getItem('makro_v02_apiurl') || '');
+      const [syncing, setSyncing] = useState(false);
       const [config, setConfig] = useState(() => {
         const saved = localStorage.getItem('makro_v02_config');
         return saved ? { ...defaultConfig, ...JSON.parse(saved) } : defaultConfig;
@@ -112,10 +128,29 @@
       const [editingPontoId, setEditingPontoId] = useState(null);
       const [showAchievement, setShowAchievement] = useState(null);
 
-      useEffect(() => { localStorage.setItem('makro_v02_config', JSON.stringify(config)); }, [config]);
+      useEffect(() => { localStorage.setItem('makro_v02_apiurl', apiUrl); }, [apiUrl]);
+      useEffect(() => { localStorage.setItem('makro_v02_config', JSON.stringify(config)); if(apiUrl) apiCall(apiUrl,'saveConfig',config); }, [config]);
       useEffect(() => { localStorage.setItem('makro_v02_time', JSON.stringify(timeRecords)); }, [timeRecords]);
       useEffect(() => { localStorage.setItem('makro_v02_manual', JSON.stringify(manualRecords)); }, [manualRecords]);
       useEffect(() => { localStorage.setItem('makro_v02_achievements', JSON.stringify(achievementsUnlocked)); }, [achievementsUnlocked]);
+
+      const syncFromSheet = async () => {
+        if(!apiUrl) return;
+        setSyncing(true);
+        const data = await apiCall(apiUrl, 'getAll');
+        if(data && !data.error) {
+          if(data.config && data.config.salario) setConfig({...defaultConfig, ...data.config});
+          if(data.ponto) setTimeRecords(data.ponto);
+          if(data.manual) setManualRecords(data.manual);
+          if(data.achievements) setAchievementsUnlocked(data.achievements);
+        }
+        setSyncing(false);
+      };
+
+      const savePontoToSheet = async (ponto) => { if(apiUrl) await apiCall(apiUrl,'savePonto',ponto); };
+      const deletePontoFromSheet = async (id) => { if(apiUrl) await apiCall(apiUrl,'deletePonto',null); };
+      const saveManualToSheet = async (manual) => { if(apiUrl) await apiCall(apiUrl,'saveManual',manual); };
+      const deleteManualFromSheet = async (id) => { if(apiUrl) await apiCall(apiUrl,'deleteManual',null); };
 
       const parseTime = (t) => { if(!t||!t.includes(':')) return 0; const [h,m] = t.split(':').map(Number); return (h||0)+((m||0)/60); };
       const fmtTime = (dec) => { const s=dec<0?'-':''; const a=Math.abs(dec); const h=Math.floor(a); const m=Math.round((a-h)*60); return `${s}${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`; };
@@ -230,22 +265,27 @@
 
       const handleSavePonto = () => {
         if(!pontoDate) return;
+        let record;
         if(editingPontoId) {
-          setTimeRecords(timeRecords.map(r => r.id===editingPontoId ? {...r, date:pontoDate, entrada:pontoEntrada, saida:pontoSaida} : r));
+          record = {id:editingPontoId, date:pontoDate, entrada:pontoEntrada, saida:pontoSaida};
+          setTimeRecords(timeRecords.map(r => r.id===editingPontoId ? record : r));
           setEditingPontoId(null);
         } else {
           const exists = timeRecords.find(r => r.date===pontoDate);
           if(exists) {
-            setTimeRecords(timeRecords.map(r => r.date===pontoDate ? {...r, entrada:pontoEntrada||r.entrada, saida:pontoSaida||r.saida} : r));
+            record = {...exists, entrada:pontoEntrada||exists.entrada, saida:pontoSaida||exists.saida};
+            setTimeRecords(timeRecords.map(r => r.date===pontoDate ? record : r));
           } else {
-            setTimeRecords([...timeRecords, {id:Date.now(), date:pontoDate, entrada:pontoEntrada, saida:pontoSaida}]);
+            record = {id:Date.now(), date:pontoDate, entrada:pontoEntrada, saida:pontoSaida};
+            setTimeRecords([...timeRecords, record]);
           }
         }
+        savePontoToSheet(record);
         setPontoEntrada(''); setPontoSaida(''); setPontoDate(new Date().toISOString().split('T')[0]);
       };
 
       const handleEditPonto = (r) => { setEditingPontoId(r.id); setPontoDate(r.date); setPontoEntrada(r.entrada); setPontoSaida(r.saida); };
-      const handleDeletePonto = (id) => { if(confirm('Excluir?')) setTimeRecords(timeRecords.filter(r=>r.id!==id)); };
+      const handleDeletePonto = (id) => { if(confirm('Excluir?')){ setTimeRecords(timeRecords.filter(r=>r.id!==id)); if(apiUrl) apiCall(apiUrl,'deletePonto',{id}); } };
 
       const [manualRef, setManualRef] = useState('');
       const [manualHrs, setManualHrs] = useState('');
@@ -255,16 +295,20 @@
       const handleSaveManual = () => {
         if(!manualRef||!manualHrs) return;
         const dec = parseTime(manualHrs);
+        let record;
         if(editingManualId) {
-          setManualRecords(manualRecords.map(r=>r.id===editingManualId?{...r,ref:manualRef,hrsStr:manualHrs,tipo:manualTipo,decimal:dec}:r));
+          record = {id:editingManualId,ref:manualRef,hrsStr:manualHrs,tipo:manualTipo,decimal:dec};
+          setManualRecords(manualRecords.map(r=>r.id===editingManualId?record:r));
           setEditingManualId(null);
         } else {
-          setManualRecords([...manualRecords,{id:Date.now(),ref:manualRef,hrsStr:manualHrs,tipo:manualTipo,decimal:dec}]);
+          record = {id:Date.now(),ref:manualRef,hrsStr:manualHrs,tipo:manualTipo,decimal:dec};
+          setManualRecords([...manualRecords,record]);
         }
+        saveManualToSheet(record);
         setManualRef(''); setManualHrs(''); setManualTipo('negativo');
       };
       const handleEditManual = (r) => { setEditingManualId(r.id); setManualRef(r.ref); setManualHrs(r.hrsStr); setManualTipo(r.tipo); setActiveTab('banco'); };
-      const handleDeleteManual = (id) => { if(confirm('Excluir?')) setManualRecords(manualRecords.filter(r=>r.id!==id)); };
+      const handleDeleteManual = (id) => { if(confirm('Excluir?')){ setManualRecords(manualRecords.filter(r=>r.id!==id)); if(apiUrl) apiCall(apiUrl,'deleteManual',{id}); } };
 
       const toggleDia = (i) => {
         const dias = config.diasSemana.includes(i) ? config.diasSemana.filter(d=>d!==i) : [...config.diasSemana,i].sort();
@@ -622,6 +666,28 @@
                   <button key={i} onClick={()=>toggleDia(i)} className={`flex-1 py-2.5 rounded-lg text-[10px] font-black uppercase transition-colors ${config.diasSemana.includes(i)?'bg-red-900/50 text-red-400 border border-red-800':'bg-white/5 text-white/20 border border-white/5'}`}>{n}</button>
                 ))}
               </div>
+            </div>
+          </div>
+
+          <div className="glass p-6 space-y-4">
+            <h3 className="font-black uppercase text-[10px] opacity-50">Google Sheets</h3>
+            <p className="text-[10px] opacity-40">Cole a URL do Apps Script para sincronizar dados na nuvem.</p>
+            <input type="text" value={apiUrl} onChange={e=>setApiUrl(e.target.value)} placeholder="https://script.google.com/macros/s/..." className="w-full p-3 rounded-xl bg-white/5 border border-white/10 text-xs font-bold outline-none" />
+            <div className="flex gap-2">
+              <button onClick={syncFromSheet} disabled={!apiUrl||syncing} className={`flex-1 py-3 rounded-xl text-xs font-black uppercase ${apiUrl?'btn-makro text-white':'bg-white/5 text-white/20 cursor-not-allowed'}`}>
+                {syncing?'Sincronizando...':'Sincronizar'}
+              </button>
+              <button onClick={async()=>{
+                if(!apiUrl) return;
+                setSyncing(true);
+                for(const r of timeRecords) await apiCall(apiUrl,'savePonto',r);
+                for(const r of manualRecords) await apiCall(apiUrl,'saveManual',r);
+                await apiCall(apiUrl,'saveConfig',config);
+                setSyncing(false);
+                alert('Dados enviados para a planilha!');
+              }} disabled={!apiUrl||syncing} className={`flex-1 py-3 rounded-xl text-xs font-black uppercase ${apiUrl?'bg-green-900/50 text-green-400 border border-green-800':'bg-white/5 text-white/20 cursor-not-allowed'}`}>
+                Enviar Tudo
+              </button>
             </div>
           </div>
         </div>
