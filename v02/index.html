@@ -8,6 +8,8 @@
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
   <style>
     * { box-sizing: border-box; }
     body { background-color: #090D14; color: #f1f5f9; font-family: 'Segoe UI', sans-serif; margin: 0; }
@@ -33,6 +35,19 @@
 </head>
 <body class="pb-24">
   <div id="root"></div>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyD4NQKbwWXxzzTWscDW1ElatAhNUA-DLqQ",
+      authDomain: "diariodebordo-269db.firebaseapp.com",
+      projectId: "diariodebordo-269db",
+      storageBucket: "diariodebordo-269db.firebasestorage.app",
+      messagingSenderId: "303960210975",
+      appId: "1:303960210975:web:0ef59f1a417909d4b19f2a"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+  </script>
 
   <script type="text/babel">
     const { useState, useEffect, useMemo, useCallback } = React;
@@ -82,31 +97,13 @@
 
     const DIA_NOMES = ['Dom','Seg','Ter','Qua','Qui','Sex','Sab'];
 
-    async function apiCall(url, action, data = null) {
-      if(!url) return {error: 'URL nao configurada'};
-      var params = 'action=' + encodeURIComponent(action);
-      if(data) params += '&data=' + encodeURIComponent(JSON.stringify(data));
-      var fullUrl = url + (url.indexOf('?') >= 0 ? '&' : '?') + params;
-      try {
-        var res = await fetch(fullUrl);
-        var text = await res.text();
-        try { return JSON.parse(text); } catch(e) { return {error: 'Resposta invalida: ' + text.substring(0, 200)}; }
-      } catch(e) {
-        return {error: e.message};
-      }
-    }
-
     function App() {
       const defaultConfig = { salario: 0, entrada: '07:50', saida: '17:38', horasAlmoco: 1, diasSemana: [1,2,3,4,5], saldoInicialMin: 0 };
-      const [apiUrl, setApiUrl] = useState(() => localStorage.getItem('makro_v02_apiurl') || '');
-      const [syncing, setSyncing] = useState(false);
-      const [config, setConfig] = useState(() => {
-        const saved = localStorage.getItem('makro_v02_config');
-        return saved ? { ...defaultConfig, ...JSON.parse(saved) } : defaultConfig;
-      });
-      const [registros, setRegistros] = useState(() => {
-        const saved = localStorage.getItem('makro_v02_time');
-        return saved ? JSON.parse(saved) : [];
+      const [config, setConfig] = useState(defaultConfig);
+      const [registros, setRegistros] = useState([]);
+      const [manualRecords, setManualRecords] = useState([]);
+      const [achievementsUnlocked, setAchievementsUnlocked] = useState([]);
+      const [loading, setLoading] = useState(true);
       });
       const [manualRecords, setManualRecords] = useState(() => {
         const saved = localStorage.getItem('makro_v02_manual');
@@ -128,32 +125,70 @@
       const [editingPontoId, setEditingPontoId] = useState(null);
       const [showAchievement, setShowAchievement] = useState(null);
 
-      useEffect(() => { localStorage.setItem('makro_v02_apiurl', apiUrl); }, [apiUrl]);
-      useEffect(() => { localStorage.setItem('makro_v02_config', JSON.stringify(config)); }, [config]);
-      useEffect(() => { localStorage.setItem('makro_v02_time', JSON.stringify(registros)); }, [registros]);
-      useEffect(() => { localStorage.setItem('makro_v02_manual', JSON.stringify(manualRecords)); }, [manualRecords]);
-      useEffect(() => { localStorage.setItem('makro_v02_achievements', JSON.stringify(achievementsUnlocked)); }, [achievementsUnlocked]);
+      useEffect(() => {
+        const loadData = async () => {
+          try {
+            const configDoc = await db.collection('config').doc('main').get();
+            if(configDoc.exists) setConfig({...defaultConfig, ...configDoc.data()});
+            
+            const regSnap = await db.collection('registros').orderBy('date','desc').get();
+            setRegistros(regSnap.docs.map(d => ({...d.data(), id: d.id})));
+            
+            const manualSnap = await db.collection('manual').get();
+            setManualRecords(manualSnap.docs.map(d => ({...d.data(), id: d.id})));
+            
+            const achSnap = await db.collection('achievements').get();
+            setAchievementsUnlocked(achSnap.docs.map(d => d.id));
+          } catch(e) {
+            console.error('Erro ao carregar:', e);
+          }
+          setLoading(false);
+        };
+        loadData();
+      }, []);
 
-      const syncFromSheet = async () => {
-        if(!apiUrl) { alert('Configure a URL do Apps Script primeiro!'); return; }
-        setSyncing(true);
-        const data = await apiCall(apiUrl, 'getAll');
-        if(data && !data.error) {
-          if(data.config && data.config.entrada) setConfig({...defaultConfig, ...data.config});
-          if(data.registros) setRegistros(data.registros);
-          alert('Sincronizado!\nConfig: ' + JSON.stringify(data.config) + '\nRegistros: ' + (data.registros||[]).length);
-        } else {
-          alert('Erro ao sincronizar:\n' + (data?.error || 'Resposta vazia'));
+      useEffect(() => {
+        if(!loading) saveConfigToFB(config);
+      }, [config, loading]);
+
+      useEffect(() => {
+        if(!loading && achievementsUnlocked.length > 0) {
+          achievementsUnlocked.forEach(id => saveAchievementToFB(id));
         }
-        setSyncing(false);
+      }, [achievementsUnlocked, loading]);
+
+      const saveConfigToFB = async (cfg) => {
+        try { await db.collection('config').doc('main').set(cfg); } catch(e) { console.error(e); }
       };
 
-      const saveRegistroToSheet = async (reg) => { if(apiUrl) await apiCall(apiUrl,'saveRegistro',reg); };
-      const deleteRegistroFromSheet = async (date) => { if(apiUrl) await apiCall(apiUrl,'deleteRegistro',{date:date}); };
+      const saveRegistroToFB = async (reg) => {
+        try {
+          const docId = reg.date;
+          await db.collection('registros').doc(docId).set(reg, {merge: true});
+        } catch(e) { console.error(e); }
+      };
+
+      const deleteRegistroFromFB = async (date) => {
+        try { await db.collection('registros').doc(date).delete(); } catch(e) { console.error(e); }
+      };
+
+      const saveManualToFB = async (manual) => {
+        try {
+          const docId = String(manual.id);
+          await db.collection('manual').doc(docId).set(manual, {merge: true});
+        } catch(e) { console.error(e); }
+      };
+
+      const deleteManualFromFB = async (id) => {
+        try { await db.collection('manual').doc(String(id)).delete(); } catch(e) { console.error(e); }
+      };
+
+      const saveAchievementToFB = async (achId) => {
+        try { await db.collection('achievements').doc(achId).set({unlockedAt: new Date().toISOString()}); } catch(e) { console.error(e); }
+      };
 
       const parseTime = (t) => { if(!t||!t.includes(':')) return 0; const [h,m] = t.split(':').map(Number); return (h||0)+((m||0)/60); };
       const fmtTime = (dec) => { const s=dec<0?'-':''; const a=Math.abs(dec); const h=Math.floor(a); const m=Math.round((a-h)*60); return `${s}${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`; };
-      const fmtMinutes = (min) => { const s=min<0?'-':''; const a=Math.abs(min); const h=Math.floor(a/60); const m=Math.round(a%60); return `${s}${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`; };
       const expectedHours = parseTime(config.saida) - parseTime(config.entrada) - (config.horasAlmoco || 0);
       const expectedMinutes = expectedHours * 60;
       const isWorkDay = (d) => { const dt = new Date(d+'T12:00:00'); return config.diasSemana.includes(dt.getDay()); };
@@ -278,13 +313,13 @@
         } else {
           setRegistros([...registros, record]);
         }
-        saveRegistroToSheet(record);
+        saveRegistroToFB(record);
         setPontoEntrada(''); setPontoSaida(''); setPontoDate(new Date().toISOString().split('T')[0]);
         setEditingPontoId(null);
       };
 
       const handleEditPonto = (r) => { setEditingPontoId(r.date); setPontoDate(r.date); setPontoEntrada(r.entrada); setPontoSaida(r.saida); };
-      const handleDeletePonto = (date) => { if(confirm('Excluir?')){ setRegistros(registros.filter(r=>r.date!==date)); if(apiUrl) apiCall(apiUrl,'deleteRegistro',{data:date}); } };
+      const handleDeletePonto = (date) => { if(confirm('Excluir?')){ setRegistros(registros.filter(r=>r.date!==date)); deleteRegistroFromFB(date); } };
 
       const [manualRef, setManualRef] = useState('');
       const [manualHrs, setManualHrs] = useState('');
@@ -303,11 +338,11 @@
           record = {id:Date.now(),ref:manualRef,hrsStr:manualHrs,tipo:manualTipo,decimal:dec};
           setManualRecords([...manualRecords,record]);
         }
-        saveManualToSheet(record);
+        saveManualToFB(record);
         setManualRef(''); setManualHrs(''); setManualTipo('negativo');
       };
       const handleEditManual = (r) => { setEditingManualId(r.id); setManualRef(r.ref); setManualHrs(r.hrsStr); setManualTipo(r.tipo); setActiveTab('banco'); };
-      const handleDeleteManual = (id) => { if(confirm('Excluir?')){ setManualRecords(manualRecords.filter(r=>r.id!==id)); if(apiUrl) apiCall(apiUrl,'deleteManual',{id}); } };
+      const handleDeleteManual = (id) => { if(confirm('Excluir?')){ setManualRecords(manualRecords.filter(r=>r.id!==id)); deleteManualFromFB(id); } };
 
       const toggleDia = (i) => {
         const dias = config.diasSemana.includes(i) ? config.diasSemana.filter(d=>d!==i) : [...config.diasSemana,i].sort();
@@ -673,39 +708,26 @@
           </div>
 
           <div className="glass p-6 space-y-4">
-            <h3 className="font-black uppercase text-[10px] opacity-50">Google Sheets</h3>
-            <p className="text-[10px] opacity-40">Cole a URL do Apps Script para sincronizar dados na nuvem.</p>
-            <input type="text" value={apiUrl} onChange={e=>setApiUrl(e.target.value)} placeholder="https://script.google.com/macros/s/..." className="w-full p-3 rounded-xl bg-white/5 border border-white/10 text-xs font-bold outline-none" />
-            <div className="flex gap-2">
-              <button onClick={syncFromSheet} disabled={!apiUrl||syncing} className={`flex-1 py-3 rounded-xl text-xs font-black uppercase ${apiUrl?'btn-makro text-white':'bg-white/5 text-white/20 cursor-not-allowed'}`}>
-                {syncing?'Sincronizando...':'Baixar da Planilha'}
-              </button>
-              <button onClick={async()=>{
-                if(!apiUrl) { alert('Cole a URL do Apps Script!'); return; }
-                setSyncing(true);
-                let erros = 0;
-                let enviados = 0;
-                for(const r of registros) {
-                  const res = await apiCall(apiUrl,'saveRegistro',r);
-                  if(res && !res.error) enviados++; else erros++;
-                }
-                const resConfig = await apiCall(apiUrl,'saveConfig',config);
-                setSyncing(false);
-                alert('Registros enviados: ' + enviados + '\nErros: ' + erros + '\nConfig: ' + (resConfig?.error || 'OK'));
-              }} disabled={!apiUrl||syncing} className={`flex-1 py-3 rounded-xl text-xs font-black uppercase ${apiUrl?'bg-green-900/50 text-green-400 border border-green-800':'bg-white/5 text-white/20 cursor-not-allowed'}`}>
-                {syncing?'Enviando...':'Enviar p/ Planilha'}
-              </button>
+            <h3 className="font-black uppercase text-[10px] opacity-50">Firebase</h3>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+              <span className="text-xs opacity-60">Conectado ao Firebase</span>
             </div>
-            <button onClick={async()=>{
-              if(!apiUrl) { alert('Cole a URL!'); return; }
-              const res = await apiCall(apiUrl, 'testar');
-              alert('Teste: ' + JSON.stringify(res));
-            }} className="w-full py-2 rounded-lg text-[10px] font-bold uppercase text-white/30 border border-white/10">
-              Testar Conexao
-            </button>
+            <p className="text-[10px] opacity-30">Dados salvos automaticamente na nuvem.</p>
           </div>
         </div>
       );
+
+      if(loading) {
+        return (
+          <div className="flex items-center justify-center h-screen">
+            <div className="text-center">
+              <div className="text-3xl mb-3 animate-pulse">⏳</div>
+              <div className="text-sm opacity-50">Carregando dados...</div>
+            </div>
+          </div>
+        );
+      }
 
       return (
         <div className="p-4 max-w-2xl mx-auto space-y-6">
