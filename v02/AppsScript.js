@@ -67,8 +67,8 @@ function handleRequest(e) {
   var result;
   try {
     var body = null;
-    if(e.postData && e.postData.contents) {
-      try { body = JSON.parse(e.postData.contents); } catch(x) {}
+    if(e.parameter.data) {
+      try { body = JSON.parse(e.parameter.data); } catch(x) {}
     }
     
     if(action === 'getAll') result = getAll(ss);
@@ -76,7 +76,7 @@ function handleRequest(e) {
     else if(action === 'saveConfig' && body) result = saveConfig(ss, body);
     else if(action === 'getRegistros') result = getRegistros(ss);
     else if(action === 'saveRegistro' && body) result = saveRegistro(ss, body);
-    else if(action === 'deleteRegistro') result = deleteRegistro(ss, e.parameter.data);
+    else if(action === 'deleteRegistro' && body) result = deleteRegistro(ss, body.date || body.data);
     else if(action === 'testar') result = {ok: true, abas: ss.getSheets().map(function(s){return s.getName()}), config: getConfig(ss), registros: getRegistros(ss).length};
     else result = {error: 'Acao desconhecida: ' + action};
   } catch(err) {
@@ -96,8 +96,8 @@ function getConfig(ss) {
   for(var i = 0; i < data.length; i++) {
     var key = String(data[i][0]).trim();
     var val = data[i][1];
-    if(key === 'jornada_inicio') config.entrada = String(val);
-    else if(key === 'jornada_fim') config.saida = String(val);
+    if(key === 'jornada_inicio') config.entrada = formatTime(val);
+    else if(key === 'jornada_fim') config.saida = formatTime(val);
     else if(key === 'horas_almoco') config.horasAlmoco = Number(val) || 1;
     else if(key === 'dias_uteis') {
       config.diasSemana = String(val).split(',');
@@ -185,4 +185,12 @@ function formatDate(val) {
   if(!val) return '';
   if(val instanceof Date) return Utilities.formatDate(val, Session.getScriptTimeZone(), 'yyyy-MM-dd');
   return String(val).substring(0, 10);
+}
+
+function formatTime(val) {
+  if(!val) return '';
+  if(val instanceof Date) return Utilities.formatDate(val, Session.getScriptTimeZone(), 'HH:mm');
+  var s = String(val);
+  if(s.indexOf(':') >= 0) return s.substring(0, 5);
+  return s;
 }

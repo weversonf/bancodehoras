@@ -84,13 +84,13 @@
 
     async function apiCall(url, action, data = null) {
       if(!url) return {error: 'URL nao configurada'};
-      const sep = url.includes('?') ? '&' : '?';
-      const fullUrl = `${url}${sep}action=${action}`;
+      var params = 'action=' + encodeURIComponent(action);
+      if(data) params += '&data=' + encodeURIComponent(JSON.stringify(data));
+      var fullUrl = url + (url.indexOf('?') >= 0 ? '&' : '?') + params;
       try {
-        const opts = data ? { method:'POST', body:JSON.stringify(data), headers:{'Content-Type':'application/json'} } : {};
-        const res = await fetch(fullUrl, opts);
-        const text = await res.text();
-        try { return JSON.parse(text); } catch(e) { return {error: 'Resposta invalida: ' + text.substring(0, 100)}; }
+        var res = await fetch(fullUrl);
+        var text = await res.text();
+        try { return JSON.parse(text); } catch(e) { return {error: 'Resposta invalida: ' + text.substring(0, 200)}; }
       } catch(e) {
         return {error: e.message};
       }
@@ -149,7 +149,7 @@
       };
 
       const saveRegistroToSheet = async (reg) => { if(apiUrl) await apiCall(apiUrl,'saveRegistro',reg); };
-      const deleteRegistroFromSheet = async (date) => { if(apiUrl) await apiCall(apiUrl,'deleteRegistro',null); };
+      const deleteRegistroFromSheet = async (date) => { if(apiUrl) await apiCall(apiUrl,'deleteRegistro',{date:date}); };
 
       const parseTime = (t) => { if(!t||!t.includes(':')) return 0; const [h,m] = t.split(':').map(Number); return (h||0)+((m||0)/60); };
       const fmtTime = (dec) => { const s=dec<0?'-':''; const a=Math.abs(dec); const h=Math.floor(a); const m=Math.round((a-h)*60); return `${s}${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`; };
